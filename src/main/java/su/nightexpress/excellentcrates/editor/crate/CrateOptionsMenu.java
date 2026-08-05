@@ -126,6 +126,13 @@ public class CrateOptionsMenu extends LinkedMenu<CratesPlugin, Crate> implements
         .appendClick("Click to edit")
         .build();
 
+    private static final IconLocale LOCALE_REROLL = LangEntry.iconBuilder("Editor.Button.Crate.Reroll").name("Reward Reroll")
+        .appendCurrent("Status", GENERIC_STATE)
+        .appendCurrent("Attempts", GENERIC_AMOUNT).br()
+        .appendInfo("Lets players confirm or reroll", "their reward before receiving it.").br()
+        .appendClick("Click to edit")
+        .build();
+
     private static final IconLocale LOCALE_EFFECT = LangEntry.iconBuilder("Editor.Button.Crate.Effect").name("Crate Effect")
         .appendCurrent("Model", GENERIC_TYPE)
         .appendCurrent("Particle", GENERIC_VALUE).br()
@@ -305,6 +312,17 @@ public class CrateOptionsMenu extends LinkedMenu<CratesPlugin, Crate> implements
             )
             .toMenuItem().setSlots(30).setHandler((viewer1, event) -> {
                 this.dialogs.show(player, CrateDialogs.CRATE_OPENING_LIMITS, crate, flush);
+            }).build()
+        );
+
+        viewer.addItem(NightItem.fromType(crate.isRerollEnabled() ? Material.ENDER_EYE : Material.ENDER_PEARL)
+            .localized(LOCALE_REROLL)
+            .replacement(replacer -> replacer
+                .replace(GENERIC_STATE, () -> CoreLang.STATE_ENABLED_DISALBED.get(crate.isRerollEnabled()))
+                .replace(GENERIC_AMOUNT, () -> String.valueOf(crate.getRerollAttempts()))
+            )
+            .toMenuItem().setSlots(35).setHandler((viewer1, event) -> {
+                this.dialogs.show(player, CrateDialogs.CRATE_REROLL, crate, flush);
             }).build()
         );
 

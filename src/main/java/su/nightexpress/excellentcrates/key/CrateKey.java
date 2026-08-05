@@ -23,6 +23,7 @@ import java.util.function.UnaryOperator;
 
 public class CrateKey implements ConfigBacked {
 
+    private final CratesPlugin plugin;
     private final Path path;
     private final String id;
 
@@ -34,6 +35,7 @@ public class CrateKey implements ConfigBacked {
     private boolean dirty;
 
     public CrateKey(@NotNull CratesPlugin plugin, @NotNull Path path, @NotNull String id) {
+        this.plugin = plugin;
         this.path = path;
         this.id = id;
     }
@@ -64,7 +66,7 @@ public class CrateKey implements ConfigBacked {
     }
 
     public void saveForce() {
-        this.markDirty();
+        this.dirty = true;
         this.saveIfDirty();
     }
 
@@ -97,6 +99,7 @@ public class CrateKey implements ConfigBacked {
 
     public void markDirty() {
         this.dirty = true;
+        this.plugin.getKeyManager().queueSave();
     }
 
     public boolean hasFile() {

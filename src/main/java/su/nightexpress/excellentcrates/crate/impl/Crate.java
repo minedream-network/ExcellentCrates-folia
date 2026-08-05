@@ -34,7 +34,7 @@ import su.nightexpress.excellentcrates.util.pos.WorldPos;
 import su.nightexpress.nightcore.bridge.currency.Currency;
 import su.nightexpress.nightcore.bridge.item.AdaptedItem;
 import su.nightexpress.nightcore.config.FileConfig;
-import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.integration.currency.EconomyBridge;
 import su.nightexpress.nightcore.manager.ConfigBacked;
 import su.nightexpress.nightcore.util.FileUtil;
@@ -82,6 +82,9 @@ public class Crate implements ConfigBacked {
     private boolean openingCooldownEnabled;
     private int openingCooldownTime;
     private int openingLimitAmount;
+
+    private boolean rerollEnabled;
+    private int     rerollAttempts;
 
     private boolean permissionRequired;
 
@@ -177,6 +180,8 @@ public class Crate implements ConfigBacked {
         this.setOpeningCooldownEnabled(config.getBoolean("OpeningCooldown.Enabled"));
         this.setOpeningCooldownTime(config.getInt("OpeningCooldown.Value"));
         this.setOpeningLimitAmount(config.getInt("OpeningLimits.Amount"));
+        this.setRerollEnabled(config.getBoolean("Reroll.Enabled"));
+        this.setRerollAttempts(config.getInt("Reroll.Attempts"));
 
         this.setPermissionRequired(config.getBoolean("Permission_Required"));
 
@@ -261,7 +266,7 @@ public class Crate implements ConfigBacked {
     }
 
     public void saveForce() {
-        this.markDirty();
+        this.dirty = true;
         this.saveIfDirty();
     }
 
@@ -293,6 +298,8 @@ public class Crate implements ConfigBacked {
         config.set("OpeningCooldown.Enabled", this.openingCooldownEnabled);
         config.set("OpeningCooldown.Value", this.openingCooldownTime);
         config.set("OpeningLimits.Amount", this.openingLimitAmount);
+        config.set("Reroll.Enabled", this.rerollEnabled);
+        config.set("Reroll.Attempts", this.rerollAttempts);
 
         config.remove("CostOptions");
         this.getCosts().forEach(cost -> config.set("CostOptions." + cost.getId(), cost));
@@ -551,6 +558,7 @@ public class Crate implements ConfigBacked {
 
     public void markDirty() {
         this.dirty = true;
+        this.plugin.getCrateManager().queueSave();
     }
 
     public boolean hasFile() {
@@ -696,6 +704,22 @@ public class Crate implements ConfigBacked {
 
     public void setOpeningLimitAmount(int openingLimitAmount) {
         this.openingLimitAmount = Math.max(1, openingLimitAmount);
+    }
+
+    public boolean isRerollEnabled() {
+        return this.rerollEnabled;
+    }
+
+    public void setRerollEnabled(boolean rerollEnabled) {
+        this.rerollEnabled = rerollEnabled;
+    }
+
+    public int getRerollAttempts() {
+        return this.rerollAttempts;
+    }
+
+    public void setRerollAttempts(int rerollAttempts) {
+        this.rerollAttempts = Math.max(0, rerollAttempts);
     }
 
     @NotNull

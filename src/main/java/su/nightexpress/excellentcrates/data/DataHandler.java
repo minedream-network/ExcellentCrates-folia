@@ -16,6 +16,7 @@ import su.nightexpress.excellentcrates.data.legacy.LegacyCrateDataSerializer;
 import su.nightexpress.excellentcrates.data.legacy.LegacyLimitDataSerializer;
 import su.nightexpress.excellentcrates.data.reward.RewardData;
 import su.nightexpress.excellentcrates.user.CrateUser;
+import su.nightexpress.excellentcrates.user.OpeningSoundMode;
 import su.nightexpress.nightcore.db.AbstractUserDataManager;
 import su.nightexpress.nightcore.db.sql.column.Column;
 import su.nightexpress.nightcore.db.sql.column.ColumnType;
@@ -34,6 +35,7 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
     public static final Column COLUMN_KEYS         = Column.of("keys", ColumnType.STRING);
     public static final Column COLUMN_KEYS_ON_HOLD = Column.of("keysOnHold", ColumnType.STRING);
     public static final Column COLUMN_CRATE_DATA   = Column.of("crateData", ColumnType.STRING);
+    public static final Column COLUMN_SOUND_MODE   = Column.of("soundMode", ColumnType.STRING);
 
     public static final Column COLUMN_CRATE_ID    = Column.of("crateId", ColumnType.STRING);
     public static final Column COLUMN_REWARD_ID   = Column.of("rewardId", ColumnType.STRING);
@@ -47,6 +49,7 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
 
     private final String tableRewardLimits;
     private final String tableCrateData;
+    private boolean hasSoundModeColumn;
 
     public DataHandler(@NotNull CratesPlugin plugin) {
         super(plugin);
@@ -127,8 +130,9 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
                 Map<String, Integer> keys = this.gson.fromJson(resultSet.getString(COLUMN_KEYS.getName()), new TypeToken<Map<String, Integer>>() {}.getType());
                 Map<String, Integer> keysOnHold = this.gson.fromJson(resultSet.getString(COLUMN_KEYS_ON_HOLD.getName()), new TypeToken<Map<String, Integer>>() {}.getType());
                 Map<String, UserCrateData> crateDataMap = this.gson.fromJson(resultSet.getString(COLUMN_CRATE_DATA.getName()), new TypeToken<Map<String, UserCrateData>>(){}.getType());
+                OpeningSoundMode soundMode = this.hasSoundModeColumn ? this.getSoundMode(resultSet.getString(COLUMN_SOUND_MODE.getName())) : OpeningSoundMode.ALL;
 
-                return new CrateUser(uuid, name, dateCreated, lastOnline, keys, keysOnHold, crateDataMap);
+                return new CrateUser(uuid, name, dateCreated, lastOnline, keys, keysOnHold, crateDataMap, soundMode);
             }
             catch (SQLException exception) {
                 exception.printStackTrace();
@@ -154,6 +158,7 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
             user.getKeysMap().putAll(fresh.getKeysMap());
             user.getCrateDataMap().clear();
             user.getCrateDataMap().putAll(fresh.getCrateDataMap());
+            user.setOpeningSoundMode(fresh.getOpeningSoundMode());
         }
 
         this.plugin.getDataManager().handleSynchronization();
@@ -162,6 +167,11 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
     @Override
     protected void onInitialize() {
         super.onInitialize();
+
+        if (!SQLQueries.hasColumn(this.connector, this.tableUsers, COLUMN_SOUND_MODE)) {
+            this.addColumn(this.tableUsers, COLUMN_SOUND_MODE, OpeningSoundMode.ALL.name());
+        }
+        this.hasSoundModeColumn = SQLQueries.hasColumn(this.connector, this.tableUsers, COLUMN_SOUND_MODE);
 
         this.createTable(this.tableCrateData, Lists.newList(
             COLUMN_CRATE_ID,
@@ -184,6 +194,7 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
         query.setValue(COLUMN_CRATE_DATA, user -> this.gson.toJson(user.getCrateDataMap()));
         query.setValue(COLUMN_KEYS, user -> this.gson.toJson(user.getKeysMap()));
         query.setValue(COLUMN_KEYS_ON_HOLD, user -> this.gson.toJson(user.getKeysOnHold()));
+        query.setValue(COLUMN_SOUND_MODE, user -> user.getOpeningSoundMode().name());
     }
 
     @Override
@@ -191,6 +202,9 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
         query.column(COLUMN_CRATE_DATA);
         query.column(COLUMN_KEYS);
         query.column(COLUMN_KEYS_ON_HOLD);
+        if (this.hasSoundModeColumn) {
+            query.column(COLUMN_SOUND_MODE);
+        }
     }
 
     @Override
@@ -198,6 +212,20 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
         columns.add(COLUMN_CRATE_DATA);
         columns.add(COLUMN_KEYS);
         columns.add(COLUMN_KEYS_ON_HOLD);
+        columns.add(COLUMN_SOUND_MODE);
+    }
+
+    @NotNull
+    private OpeningSoundMode getSoundMode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return OpeningSoundMode.ALL;
+        }
+        try {
+            return OpeningSoundMode.valueOf(raw.toUpperCase(Locale.ROOT));
+        }
+        catch (IllegalArgumentException ignored) {
+            return OpeningSoundMode.ALL;
+        }
     }
 
     @NotNull

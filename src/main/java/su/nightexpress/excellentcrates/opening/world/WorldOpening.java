@@ -16,10 +16,10 @@ public abstract class WorldOpening extends AbstractOpening {
     }
 
     protected void hideHologram(@NotNull WorldPos blockPos) {
-        this.plugin.getHologramManager().ifPresent(hologramManager -> hologramManager.disableBlockHologram(this.crate, blockPos));
+        this.plugin.getHologramManager().ifPresent(hologramManager -> hologramManager.hideBlockHologram(this.player, this.crate, blockPos));
     }
 
     protected void showHologram(@NotNull WorldPos blockPos) {
-        this.plugin.getHologramManager().ifPresent(hologramManager -> hologramManager.enableBlockHologram(this.crate, blockPos));
+        this.plugin.getHologramManager().ifPresent(hologramManager -> hologramManager.showBlockHologram(this.player, this.crate, blockPos));
     }
 }

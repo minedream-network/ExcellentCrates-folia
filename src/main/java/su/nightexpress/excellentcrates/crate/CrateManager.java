@@ -21,6 +21,7 @@ import su.nightexpress.excellentcrates.config.Keys;
 import su.nightexpress.excellentcrates.config.Lang;
 import su.nightexpress.excellentcrates.crate.cost.Cost;
 import su.nightexpress.excellentcrates.crate.cost.CostDialogs;
+import su.nightexpress.excellentcrates.crate.cost.entry.impl.KeyCostEntry;
 import su.nightexpress.excellentcrates.crate.effect.CrateEffect;
 import su.nightexpress.excellentcrates.crate.effect.EffectId;
 import su.nightexpress.excellentcrates.crate.impl.*;
@@ -49,20 +50,28 @@ import su.nightexpress.excellentcrates.util.ItemHelper;
 import su.nightexpress.excellentcrates.util.pos.WorldPos;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.core.config.CoreLang;
+import su.nightexpress.nightcore.locale.message.LangMessage;
+import su.nightexpress.nightcore.locale.message.MessageData;
+import su.nightexpress.nightcore.locale.message.impl.ChatMessage;
 import su.nightexpress.nightcore.manager.AbstractManager;
 import su.nightexpress.nightcore.util.*;
 import su.nightexpress.nightcore.util.text.night.wrapper.TagWrappers;
 import su.nightexpress.nightcore.util.time.TimeFormatType;
 import su.nightexpress.nightcore.util.time.TimeFormats;
 import su.nightexpress.nightcore.util.wrapper.UniParticle;
+import su.nightexpress.nightcore.util.placeholder.Replacer;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CrateManager extends AbstractManager<CratesPlugin> {
+
+    private static final long EDITOR_SAVE_DELAY_TICKS = 20L;
 
     private final DialogRegistry dialogs;
 
@@ -71,6 +80,7 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     private final Map<WorldPos, Crate>     crateByPosMap;
     private final Map<String, PreviewMenu> previewByIdMap;
     private final Map<UUID, Long>          previewCooldown;
+    private final AtomicBoolean            saveQueued;
 
     private OpeningCostMenu   costMenu;
     private OpeningAmountMenu amountMenu;
@@ -85,6 +95,7 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         this.crateByPosMap = new HashMap<>();
         this.previewByIdMap = new HashMap<>();
         this.previewCooldown = new HashMap<>();
+        this.saveQueued = new AtomicBoolean();
     }
 
     @Override
@@ -215,6 +226,7 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         this.dialogs.register(CrateDialogs.CRATE_PREVIEW, () -> new CratePreviewDialog(this.plugin));
         this.dialogs.register(CrateDialogs.CRATE_OPENING, () -> new CrateOpeningDialog(this.plugin));
         this.dialogs.register(CrateDialogs.CRATE_OPENING_LIMITS, CrateOpeningLimitsDialog::new);
+        this.dialogs.register(CrateDialogs.CRATE_REROLL, CrateRerollDialog::new);
         this.dialogs.register(CrateDialogs.CRATE_EFFECT, () -> new CrateEffectDialog(this.dialogs));
         this.dialogs.register(CrateDialogs.CRATE_PARTICLE, CrateParticleDialog::new);
         this.dialogs.register(CrateDialogs.CRATE_HOLOGRAM, CrateHologramDialog::new);
@@ -240,8 +252,21 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         this.getCrates().forEach(crate -> crate.collectProblems().print(this.plugin.getLogger()));
     }
 
-    private void saveCrates() {
+    private synchronized void saveCrates() {
         this.getCrates().forEach(Crate::saveIfDirty);
+    }
+
+    public synchronized void saveCratesForce() {
+        this.getCrates().forEach(Crate::saveForce);
+    }
+
+    public void queueSave() {
+        if (!this.saveQueued.compareAndSet(false, true)) return;
+
+        this.plugin.runTaskLaterAsync(() -> {
+            this.saveQueued.set(false);
+            this.saveCrates();
+        }, EDITOR_SAVE_DELAY_TICKS);
     }
 
     public int countCrates() {
@@ -463,6 +488,11 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
     public void preOpenCrate(@NotNull Player player, @NotNull CrateSource source) {
         Crate crate = source.getCrate();
+        boolean ignoreAnimation = Config.OPENING_SNEAK_RIGHT_CLICK_IGNORE_ANIMATION.get() && player.isSneaking();
+
+        if (this.isAlreadyOpening(player)) {
+            return;
+        }
 
         // Check if it's possible for a player to open crates.
         if (!this.testRestrictions(player, crate)) {
@@ -472,7 +502,10 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
         if (!crate.hasCost()) {
             if (Config.MASS_OPENING_ALLOW_FOR_NO_COST.get()) {
-                if (Config.MASS_OPENING_SNEAK_TO_USE.get() && player.isSneaking()) {
+                if (ignoreAnimation) {
+                    this.openCrate(player, source, OpenOptions.of(OpenOptions.Option.IGNORE_ANIMATION), null);
+                }
+                else if (Config.MASS_OPENING_SNEAK_TO_USE.get() && player.isSneaking()) {
                     this.multiOpenCrate(player, source, OpenOptions.empty(), null, Config.MASS_OPENING_LIMIT.get());
                 }
                 else {
@@ -491,13 +524,35 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         }
 
         Cost cost = crate.getFirstCost().orElse(null);
+        OpenOptions options = this.createOpenOptions(player, cost, ignoreAnimation);
 
-        if (Config.MASS_OPENING_SNEAK_TO_USE.get() && player.isSneaking()) {
-            this.multiOpenCrate(player, source, OpenOptions.empty(), cost, crate.countMaxOpenings(player));
+        if (options.has(OpenOptions.Option.IGNORE_ANIMATION)) {
+            this.openCrate(player, source, options, cost);
+        }
+        else if (Config.MASS_OPENING_SNEAK_TO_USE.get() && player.isSneaking()) {
+            this.multiOpenCrate(player, source, options, cost, crate.countMaxOpenings(player));
         }
         else {
-            this.openCrate(player, source, OpenOptions.empty(), cost);
+            this.openCrate(player, source, options, cost);
         }
+    }
+
+    @NotNull
+    public OpenOptions createOpenOptions(@NotNull Player player, @Nullable Cost cost, boolean ignoreAnimation) {
+        OpenOptions options = OpenOptions.empty();
+
+        if (ignoreAnimation || this.shouldIgnoreAnimationForSingleKey(player, cost)) {
+            options.with(OpenOptions.Option.IGNORE_ANIMATION);
+        }
+
+        return options;
+    }
+
+    private boolean shouldIgnoreAnimationForSingleKey(@NotNull Player player, @Nullable Cost cost) {
+        return Config.OPENING_SINGLE_KEY_IGNORE_ANIMATION.get()
+            && cost != null
+            && cost.getEntries().stream().anyMatch(KeyCostEntry.class::isInstance)
+            && cost.countMaxOpenings(player) == 1;
     }
 
     public void multiOpenCrate(@NotNull Player player, @NotNull CrateSource source, @NotNull OpenOptions options, @Nullable Cost cost, int amount) {
@@ -515,16 +570,19 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         }
     }
 
+    private boolean isAlreadyOpening(@NotNull Player player) {
+        if (this.plugin.getOpeningManager().isOpeningAvailable(player)) {
+            return false;
+        }
+
+        Lang.CRATE_OPEN_ERROR_ALREADY.message().send(player);
+        return true;
+    }
+
     private boolean testRestrictions(@NotNull Player player, @NotNull Crate crate) {
         // Wait until crate datas and reward limits are loaded.
         if (!this.plugin.getDataManager().isDataLoaded()) {
             Lang.ERROR_DATA_IS_LOADING.message().send(player);
-            return false;
-        }
-
-        // Check if player is in other opening or if crate block is occupied by others.
-        if (!this.plugin.getOpeningManager().isOpeningAvailable(player)) {
-            Lang.CRATE_OPEN_ERROR_ALREADY.message().send(player);
             return false;
         }
 
@@ -546,6 +604,10 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         CrateUser user = plugin.getUserManager().getOrFetch(player);
         UserCrateData userCrate = user.getCrateData(crate);
         Cost realCost = options.has(OpenOptions.Option.IGNORE_COST) ? null : cost;
+
+        if (this.isAlreadyOpening(player)) {
+            return false;
+        }
 
         if (!this.testRestrictions(player, crate)) {
             this.pushback(player, source);
@@ -651,11 +713,12 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         globalData.setDirty(true);
 
         if (reward.isBroadcast()) {
-            Lang.CRATE_OPEN_REWARD_BROADCAST.message().broadcast(replacer -> replacer
-                .replace(Placeholders.forPlayerWithPAPI(player))
-                .replace(crate.replacePlaceholders())
-                .replace(reward.replacePlaceholders())
-            );
+            for (Player target : this.plugin.getServer().getOnlinePlayers()) {
+                if (!this.plugin.getRewardBroadcastFilterRegistry().shouldReceive(target, player, reward)) {
+                    continue;
+                }
+                this.sendRewardBroadcast(target, player, crate, reward);
+            }
         }
 
         this.addRollCount(player, reward);
@@ -663,6 +726,61 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
         CrateObtainRewardEvent event = new CrateObtainRewardEvent(reward, player);
         this.plugin.getPluginManager().callEvent(event);
+    }
+
+    private void sendRewardBroadcast(@NotNull Player target, @NotNull Player opener, @NotNull Crate crate, @NotNull Reward reward) {
+        LangMessage message = Lang.CRATE_OPEN_REWARD_BROADCAST.message();
+
+        if (!Config.REWARD_BROADCAST_SOUND_ENABLED.get()) {
+            message = this.withoutSound(message);
+        }
+
+        message.send(target, replacer -> this.replaceRewardBroadcast(replacer, opener, crate, reward));
+    }
+
+    @NotNull
+    private LangMessage withoutSound(@NotNull LangMessage message) {
+        MessageData data = this.getMessageData(message);
+        if (data == null) return message;
+
+        MessageData silentData = new MessageData(data.type(), data.usePrefix(), data.replacePlaceholders(), null, data.titleTimes());
+        LangMessage silentMessage = LangMessage.createFromData(message.getText(), silentData);
+
+        String prefix = this.getMessagePrefix(message);
+        return prefix != null && silentMessage instanceof ChatMessage chatMessage ? chatMessage.withPrefix(prefix) : silentMessage;
+    }
+
+    @Nullable
+    private MessageData getMessageData(@NotNull LangMessage message) {
+        try {
+            Field field = LangMessage.class.getDeclaredField("data");
+            field.setAccessible(true);
+            return (MessageData) field.get(message);
+        }
+        catch (ReflectiveOperationException exception) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private String getMessagePrefix(@NotNull LangMessage message) {
+        if (!(message instanceof ChatMessage)) return null;
+
+        try {
+            Field field = ChatMessage.class.getDeclaredField("prefix");
+            field.setAccessible(true);
+            return (String) field.get(message);
+        }
+        catch (ReflectiveOperationException exception) {
+            return null;
+        }
+    }
+
+    private void replaceRewardBroadcast(@NotNull Replacer replacer, @NotNull Player opener, @NotNull Crate crate, @NotNull Reward reward) {
+        replacer
+            .replace(Placeholders.forPlayerWithPAPI(opener))
+            .replace(crate.replacePlaceholders())
+            .replace(reward.replacePlaceholders());
     }
 
     public void addRollCount(@NotNull Player player, @NotNull Reward reward) {

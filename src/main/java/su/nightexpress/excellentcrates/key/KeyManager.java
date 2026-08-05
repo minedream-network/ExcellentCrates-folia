@@ -29,17 +29,22 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class KeyManager extends AbstractManager<CratesPlugin> {
+
+    private static final long EDITOR_SAVE_DELAY_TICKS = 20L;
 
     private final DialogRegistry dialogs;
 
     private final Map<String, CrateKey> keyByIdMap;
+    private final AtomicBoolean         saveQueued;
 
     public KeyManager(@NotNull CratesPlugin plugin, @NotNull DialogRegistry dialogs) {
         super(plugin);
         this.dialogs = dialogs;
         this.keyByIdMap = new HashMap<>();
+        this.saveQueued = new AtomicBoolean();
     }
 
     @Override
@@ -88,8 +93,21 @@ public class KeyManager extends AbstractManager<CratesPlugin> {
         this.dialogs.register(KeyDialogs.ITEM, KeyItemDialog::new);
     }
 
-    private void saveKeys() {
+    private synchronized void saveKeys() {
         this.getKeys().forEach(CrateKey::saveIfDirty);
+    }
+
+    public synchronized void saveKeysForce() {
+        this.getKeys().forEach(CrateKey::saveForce);
+    }
+
+    public void queueSave() {
+        if (!this.saveQueued.compareAndSet(false, true)) return;
+
+        this.plugin.runTaskLaterAsync(() -> {
+            this.saveQueued.set(false);
+            this.saveKeys();
+        }, EDITOR_SAVE_DELAY_TICKS);
     }
 
     private void reportProblems() {
@@ -102,7 +120,7 @@ public class KeyManager extends AbstractManager<CratesPlugin> {
 
         CrateKey key = new CrateKey(this.plugin, path, id);
         key.setName(StringUtil.capitalizeFully(id) + " Key");
-        key.setVirtual(false);
+        key.setVirtual(Config.KEYS_VIRTUAL_BY_DEFAULT.get());
 
         ItemStack item = new ItemStack(Material.TRIPWIRE_HOOK);
         ItemUtil.editMeta(item, meta -> {

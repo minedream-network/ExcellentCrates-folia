@@ -193,4 +193,29 @@ public class InventoryOpening extends AbstractOpening {
     public boolean isLaunched() {
         return this.launched;
     }
+
+    @Override
+    protected boolean rerollWithAnimation() {
+        if (this.isIgnoreAnimationOnReroll()) {
+            return false;
+        }
+
+        this.awaitingRewardConfirmation = false;
+        this.rerollMenuSwitching = true;
+
+        this.player.closeInventory();
+        this.rerollMenuSwitching = false;
+
+        this.rewards.clear();
+        this.spinners.forEach(Spinner::stop);
+        this.spinners.clear();
+
+        this.tickCount = 0L;
+        this.closeTicks = this.config.getCompletionPauseTicks();
+        this.launchTicks = 0L;
+        this.launched = false;
+
+        this.start();
+        return true;
+    }
 }

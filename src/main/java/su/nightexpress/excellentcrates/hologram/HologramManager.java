@@ -19,7 +19,7 @@ import su.nightexpress.excellentcrates.hooks.HookId;
 import su.nightexpress.excellentcrates.util.CrateUtils;
 import su.nightexpress.excellentcrates.util.pos.WorldPos;
 import su.nightexpress.nightcore.manager.AbstractManager;
-import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.LocationUtil;
 import su.nightexpress.nightcore.util.Plugins;
 import su.nightexpress.nightcore.util.placeholder.Replacer;
@@ -94,6 +94,31 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
 
     public void enableBlockHologram(@NotNull Crate crate, @NotNull WorldPos blockPos) {
         this.toggleBlockHologram(crate, blockPos, true);
+    }
+
+    public void hideBlockHologram(@NotNull Player player, @NotNull Crate crate, @NotNull WorldPos blockPos) {
+        FakeDisplay display = this.getDisplay(crate);
+        if (display == null) return;
+
+        FakeEntityGroup group = display.getGroup(blockPos);
+        if (group == null) return;
+
+        group.hideFor(player);
+        this.removeForViewer(player, group);
+    }
+
+    public void showBlockHologram(@NotNull Player player, @NotNull Crate crate, @NotNull WorldPos blockPos) {
+        FakeDisplay display = this.getDisplay(crate);
+        if (display == null) return;
+
+        FakeEntityGroup group = display.getGroup(blockPos);
+        if (group == null) return;
+
+        group.showFor(player);
+
+        if (!group.isDisabled()) {
+            this.render(crate);
+        }
     }
 
     private void toggleBlockHologram(@NotNull Crate crate, @NotNull WorldPos blockPos, boolean enabled) {
@@ -176,6 +201,15 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
                     this.discard(group); // Remove all viewers and send entity destroy packet.
                     return;
                 }
+
+                players.removeIf(player -> {
+                    if (!group.isHiddenFor(player)) return false;
+
+                    if (group.isViewer(player)) {
+                        this.removeForViewer(player, group);
+                    }
+                    return true;
+                });
 
                 players.forEach(player -> {
                     boolean needSpawn = !group.isViewer(player);

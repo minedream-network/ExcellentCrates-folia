@@ -15,12 +15,14 @@ public class CrateUser extends AbstractUser {
     private final Map<String, Integer>       keys;
     private final Map<String, Integer>       keysOnHold;
     private final Map<String, UserCrateData> crateDataMap;
+    private OpeningSoundMode openingSoundMode;
 
     public CrateUser(@NotNull UUID uuid, @NotNull String name) {
         this(uuid, name, System.currentTimeMillis(), System.currentTimeMillis(),
             new HashMap<>(),
             new HashMap<>(),
-            new HashMap<>()
+            new HashMap<>(),
+            OpeningSoundMode.ALL
         );
     }
 
@@ -30,11 +32,13 @@ public class CrateUser extends AbstractUser {
                      long lastOnline,
                      @NotNull Map<String, Integer> keys,
                      @NotNull Map<String, Integer> keysOnHold,
-                     @NotNull Map<String, UserCrateData> crateDataMap) {
+                     @NotNull Map<String, UserCrateData> crateDataMap,
+                     @NotNull OpeningSoundMode openingSoundMode) {
         super(uuid, name, dateCreated, lastOnline);
         this.keys = keys;
         this.keysOnHold = keysOnHold;
         this.crateDataMap = new HashMap<>(crateDataMap);
+        this.openingSoundMode = openingSoundMode;
     }
 
     @NotNull
@@ -105,5 +109,14 @@ public class CrateUser extends AbstractUser {
 
     public void cleanKeysOnHold() {
         this.keysOnHold.clear();
+    }
+
+    @NotNull
+    public OpeningSoundMode getOpeningSoundMode() {
+        return this.openingSoundMode;
+    }
+
+    public void setOpeningSoundMode(@NotNull OpeningSoundMode openingSoundMode) {
+        this.openingSoundMode = openingSoundMode;
     }
 }

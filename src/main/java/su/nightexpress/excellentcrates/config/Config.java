@@ -86,6 +86,12 @@ public class Config {
         "Whether Mass Opening feature is enabled."
     );
 
+    public static final ConfigValue<Boolean> KEYS_VIRTUAL_BY_DEFAULT = ConfigValue.create("Keys.Virtual_By_Default",
+        true,
+        "Controls whether newly created crate keys are virtual by default.",
+        "Virtual keys are stored on player data instead of existing as inventory items."
+    );
+
     public static final ConfigValue<Boolean> MILESTONES_ENABLED = ConfigValue.create("Milestones.Enabled",
         true,
         "Controls whether Milestones feature is enabled.");
@@ -174,6 +180,31 @@ public class Config {
         "Controls whether the Costs GUI will appear even if there is only cost option available."
     );
 
+    public static final ConfigValue<Boolean> OPENING_SNEAK_RIGHT_CLICK_IGNORE_ANIMATION = ConfigValue.create("Crate.Opening.SneakRightClick.IgnoreAnimation",
+        false,
+        "Controls whether sneaking while opening a crate should skip opening animation.",
+        "When enabled, Shift + Right Click will open a single crate with ignored animation.",
+        "[*] This option takes priority over SneakToUse mass opening for block/item interactions."
+    );
+
+    public static final ConfigValue<Boolean> OPENING_SINGLE_KEY_IGNORE_ANIMATION = ConfigValue.create("Crate.Opening.SingleKey.IgnoreAnimation",
+        false,
+        "Controls whether a single available key opening should skip opening animation.",
+        "When enabled, players who can open exactly one crate with a key cost will receive the reward instantly."
+    );
+
+    public static final ConfigValue<Boolean> OPENING_SOUNDS_GLOBAL_ENABLED = ConfigValue.create("Crate.Opening.Sounds.Global_Enabled",
+        true,
+        "Controls whether world opening sounds should be heard by nearby players.",
+        "When disabled, only the player opening the crate can hear opening sounds."
+    );
+
+    public static final ConfigValue<Boolean> REWARD_BROADCAST_SOUND_ENABLED = ConfigValue.create("Crate.Rewards.Broadcast.Sound_Enabled",
+        true,
+        "Controls whether reward broadcast messages should play a sound.",
+        "When disabled, broadcast messages will still be sent, but silently."
+    );
+
     public static final ConfigValue<Boolean> MASS_OPENING_ALLOW_FOR_NO_COST = ConfigValue.create("Crate.MassOpening.AllowForNoCost",
         false,
         "Controls whether players can do Mass Opening for crates with no cost options defined."
@@ -257,4 +288,5 @@ public class Config {
     public static boolean isMassOpenEnabled() {
         return FEATURE_MASS_OPENING.get();
     }
+
 }

@@ -29,6 +29,7 @@ public class Lang implements LangContainer {
     public static final MessageLocale ERROR_COMMAND_INVALID_KEY_ARGUMENT = LangEntry.builder("Error.Command.Argument.InvalidKey").chatMessage(
         GRAY.wrap(SOFT_RED.wrap(GENERIC_VALUE) + " is not a valid key!"));
 
+    public static final TextLocale COMMAND_SAVE_DESC           = LangEntry.builder("Command.Save.Desc").text("Force save crates and keys.");
     public static final TextLocale COMMAND_EDITOR_DESC         = LangEntry.builder("Command.Editor.Desc").text("Open editor GUI.");
     public static final TextLocale COMMAND_DROP_DESC           = LangEntry.builder("Command.Drop.Desc").text("Spawn crate item in the world.");
     public static final TextLocale COMMAND_DROP_KEY_DESC       = LangEntry.builder("Command.DropKey.Desc").text("Spawn key item in the world.");
@@ -43,6 +44,7 @@ public class Lang implements LangContainer {
     public static final TextLocale COMMAND_PREVIEW_DESC        = LangEntry.builder("Command.Preview.Desc").text("Open crate preview.");
     public static final TextLocale COMMAND_RESET_COOLDOWN_DESC = LangEntry.builder("Command.ResetCooldown.Desc").text("Reset player's crate open cooldown.");
     public static final TextLocale COMMAND_MENU_DESC           = LangEntry.builder("Command.Menu.Desc").text("Open crate menu.");
+    public static final TextLocale COMMAND_SOUND_DESC          = LangEntry.builder("Command.Sound.Desc").text("Set crate opening sound mode.");
 
     public static final MessageLocale COMMAND_DROP_DONE = LangEntry.builder("Command.Drop.Done").chatMessage(
         GRAY.wrap("Dropped " + SOFT_YELLOW.wrap(CRATE_NAME) + " at " + SOFT_YELLOW.wrap(LOCATION_X + ", " + LOCATION_Y + ", " + LOCATION_Z) + " in " + SOFT_YELLOW.wrap(LOCATION_WORLD) + "."));
@@ -50,6 +52,9 @@ public class Lang implements LangContainer {
     public static final MessageLocale COMMAND_DROP_KEY_DONE = LangEntry.builder("Command.DropKey.Done").chatMessage(
         GRAY.wrap("Dropped " + SOFT_YELLOW.wrap(KEY_NAME) + " at " + SOFT_YELLOW.wrap(LOCATION_X + ", " + LOCATION_Y + ", " + LOCATION_Z) + " in " + SOFT_YELLOW.wrap(LOCATION_WORLD) + "."));
 
+
+    public static final MessageLocale COMMAND_SAVE_DONE = LangEntry.builder("Command.Save.Done").chatMessage(
+        GRAY.wrap("Saved all crates and keys."));
 
 
     public static final MessageLocale COMMAND_OPEN_FOR_DONE = LangEntry.builder("Command.OpenFor.Done").chatMessage(
@@ -114,6 +119,9 @@ public class Lang implements LangContainer {
 
     public static final MessageLocale COMMAND_MENU_DONE_OTHERS = LangEntry.builder("Command.Menu.Done.Others").chatMessage(
         GRAY.wrap("Opened crates menu for " + SOFT_YELLOW.wrap(PLAYER_DISPLAY_NAME) + "."));
+
+    public static final MessageLocale COMMAND_SOUND_DONE = LangEntry.builder("Command.Sound.Done").chatMessage(
+        GRAY.wrap("Crate opening sound mode set to " + SOFT_YELLOW.wrap(GENERIC_VALUE) + "."));
 
 
 

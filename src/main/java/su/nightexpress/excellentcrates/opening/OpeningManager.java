@@ -15,7 +15,7 @@ import su.nightexpress.excellentcrates.crate.impl.CrateSource;
 import su.nightexpress.excellentcrates.opening.world.provider.DummyProvider;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.manager.AbstractManager;
-import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.FileUtil;
 
 import java.io.File;
@@ -28,16 +28,19 @@ public class OpeningManager extends AbstractManager<CratesPlugin> {
     private final Map<UUID, Opening>           openingByPlayerMap;
 
     private final DummyProvider dummyProvider;
+    private final RerollMenu    rerollMenu;
 
     public OpeningManager(@NotNull CratesPlugin plugin) {
         super(plugin);
         this.providerByIdMap = new HashMap<>();
         this.openingByPlayerMap = new ConcurrentHashMap<>();
         this.dummyProvider = new DummyProvider(plugin);
+        this.rerollMenu = new RerollMenu(plugin);
     }
 
     @Override
     protected void onLoad() {
+        this.rerollMenu.load();
         this.loadDefaults();
         this.loadProviders();
 
@@ -156,6 +159,11 @@ public class OpeningManager extends AbstractManager<CratesPlugin> {
         this.getOpenings().forEach(opening -> new FoliaScheduler(plugin).runTask(opening.getPlayer(), opening::tick));
     }
 
+    @NotNull
+    public RerollMenu getRerollMenu() {
+        return this.rerollMenu;
+    }
+
     public boolean isOpening(@NotNull Player player) {
         return this.getOpening(player) != null;
     }
@@ -191,6 +199,10 @@ public class OpeningManager extends AbstractManager<CratesPlugin> {
 
     public void startOpening(@NotNull Player player, @NotNull Opening opening, boolean instaRoll) {
         this.openingByPlayerMap.putIfAbsent(player.getUniqueId(), opening);
+
+        if (opening instanceof AbstractOpening abstractOpening) {
+            abstractOpening.setIgnoreAnimationOnReroll(instaRoll);
+        }
 
         opening.start(); // Start ticking
 

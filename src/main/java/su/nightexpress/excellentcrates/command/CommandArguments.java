@@ -21,6 +21,7 @@ public class CommandArguments {
     public static final String Y      = "y";
     public static final String Z      = "z";
     public static final String WORLD  = "world";
+    public static final String MODE   = "mode";
 
     @NotNull
     public static ArgumentNodeBuilder<Crate> forCrate(@NotNull CratesPlugin plugin) {

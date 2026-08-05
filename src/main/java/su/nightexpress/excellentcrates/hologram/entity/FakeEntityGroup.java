@@ -12,6 +12,7 @@ public class FakeEntityGroup {
     private final WorldPos         blockPos;
     private final List<FakeEntity> entities;
     private final Set<UUID>        humanViewers;
+    private final Set<UUID>        hiddenViewers;
 
     private boolean disabled;
 
@@ -19,6 +20,7 @@ public class FakeEntityGroup {
         this.blockPos = blockPos;
         this.entities = new ArrayList<>();
         this.humanViewers = new HashSet<>();
+        this.hiddenViewers = new HashSet<>();
         this.disabled = false;
     }
 
@@ -34,8 +36,21 @@ public class FakeEntityGroup {
         return this.humanViewers.contains(player.getUniqueId());
     }
 
+    public void hideFor(@NotNull Player player) {
+        this.hiddenViewers.add(player.getUniqueId());
+    }
+
+    public void showFor(@NotNull Player player) {
+        this.hiddenViewers.remove(player.getUniqueId());
+    }
+
+    public boolean isHiddenFor(@NotNull Player player) {
+        return this.hiddenViewers.contains(player.getUniqueId());
+    }
+
     public void clearViewers() {
         this.humanViewers.clear();
+        this.hiddenViewers.clear();
     }
 
     public void addEntity(@NotNull FakeEntity entity) {

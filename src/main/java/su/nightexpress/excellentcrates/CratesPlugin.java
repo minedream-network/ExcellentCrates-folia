@@ -1,7 +1,9 @@
 package su.nightexpress.excellentcrates;
 
+import org.bukkit.plugin.ServicePriority;
 import org.jetbrains.annotations.NotNull;
 import su.nightexpress.excellentcrates.api.addon.CratesAddon;
+import su.nightexpress.excellentcrates.api.broadcast.RewardBroadcastFilterRegistry;
 import su.nightexpress.excellentcrates.command.BaseCommands;
 import su.nightexpress.excellentcrates.config.Config;
 import su.nightexpress.excellentcrates.config.Keys;
@@ -47,6 +49,7 @@ public class CratesPlugin extends NightPlugin {
     private EditorManager   editorManager;
 
     private CrateLogger crateLogger;
+    private RewardBroadcastFilterRegistry rewardBroadcastFilterRegistry;
 
     @Override
     @NotNull
@@ -76,6 +79,13 @@ public class CratesPlugin extends NightPlugin {
     public void enable() {
         this.crateLogger = new CrateLogger(this);
         this.dialogRegistry = new DialogRegistry(this);
+        this.rewardBroadcastFilterRegistry = new RewardBroadcastFilterRegistry();
+        this.getServer().getServicesManager().register(
+            RewardBroadcastFilterRegistry.class,
+            this.rewardBroadcastFilterRegistry,
+            this,
+            ServicePriority.Normal
+        );
 
         ProviderRegistry.load();
         CratesRegistries.load(this);
@@ -132,6 +142,10 @@ public class CratesPlugin extends NightPlugin {
         if (this.dataManager != null) this.dataManager.shutdown();
         if (this.dataHandler != null) this.dataHandler.shutdown();
         if (this.dialogRegistry != null) this.dialogRegistry.clear();
+        if (this.rewardBroadcastFilterRegistry != null) {
+            this.getServer().getServicesManager().unregister(RewardBroadcastFilterRegistry.class, this.rewardBroadcastFilterRegistry);
+            this.rewardBroadcastFilterRegistry.clear();
+        }
 
         if (Plugins.hasPlaceholderAPI()) {
             PlaceholderHook.shutdown();
@@ -139,6 +153,7 @@ public class CratesPlugin extends NightPlugin {
 
         CratesRegistries.clear();
         ProviderRegistry.clear();
+        this.rewardBroadcastFilterRegistry = null;
     }
 
     @Override
@@ -212,5 +227,10 @@ public class CratesPlugin extends NightPlugin {
     @NotNull
     public CrateManager getCrateManager() {
         return this.crateManager;
+    }
+
+    @NotNull
+    public RewardBroadcastFilterRegistry getRewardBroadcastFilterRegistry() {
+        return this.rewardBroadcastFilterRegistry;
     }
 }

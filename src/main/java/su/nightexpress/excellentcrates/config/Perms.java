@@ -21,6 +21,7 @@ public class Perms {
     public static final UniPermission INCLUDE_KEY_GIVEALL = new UniPermission(PREFIX + "include.giveall", "Includes the player in the crate key giveall command.", TRUE);
 
     public static final UniPermission COMMAND_RELOAD             = new UniPermission(PREFIX_COMMAND + "reload");
+    public static final UniPermission COMMAND_SAVE               = new UniPermission(PREFIX_COMMAND + "save");
     public static final UniPermission COMMAND_EDITOR             = new UniPermission(PREFIX_COMMAND + "editor");
     public static final UniPermission COMMAND_DROP               = new UniPermission(PREFIX_COMMAND + "drop");
     public static final UniPermission COMMAND_DROP_KEY           = new UniPermission(PREFIX_COMMAND + "dropkey");
@@ -38,6 +39,7 @@ public class Perms {
     public static final UniPermission COMMAND_PREVIEW            = new UniPermission(PREFIX_COMMAND + "preview");
     public static final UniPermission COMMAND_PREVIEW_OTHERS     = new UniPermission(PREFIX_COMMAND + "preview.others");
     public static final UniPermission COMMAND_RESETCOOLDOWN      = new UniPermission(PREFIX_COMMAND + "resetcooldown");
+    public static final UniPermission COMMAND_SOUND              = new UniPermission(PREFIX_COMMAND + "sound");
 
     public static final UniPermission BYPASS_CRATE_COOLDOWN  = new UniPermission(PREFIX_BYPASS + "crate.opencooldown");
 
@@ -46,6 +48,7 @@ public class Perms {
 
         COMMAND.addChildren(
             COMMAND_RELOAD,
+            COMMAND_SAVE,
             COMMAND_EDITOR,
             COMMAND_DROP,
             COMMAND_DROP_KEY,
@@ -62,7 +65,8 @@ public class Perms {
             COMMAND_MENU_OTHERS,
             COMMAND_PREVIEW,
             COMMAND_PREVIEW_OTHERS,
-            COMMAND_RESETCOOLDOWN
+            COMMAND_RESETCOOLDOWN,
+            COMMAND_SOUND
         );
 
         BYPASS.addChildren(

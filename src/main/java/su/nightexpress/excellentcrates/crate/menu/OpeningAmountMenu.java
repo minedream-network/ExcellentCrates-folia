@@ -14,7 +14,6 @@ import su.nightexpress.excellentcrates.crate.CrateManager;
 import su.nightexpress.excellentcrates.crate.cost.Cost;
 import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.CrateSource;
-import su.nightexpress.excellentcrates.crate.impl.OpenOptions;
 import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.ui.menu.MenuViewer;
@@ -81,7 +80,7 @@ public class OpeningAmountMenu extends LinkedMenu<CratesPlugin, OpeningAmountMen
                 .setHandler((viewer1, event) -> {
                     this.runNextTick(() -> {
                         player.closeInventory();
-                        this.manager.multiOpenCrate(player, source, OpenOptions.empty(), cost, amount);
+                        this.manager.multiOpenCrate(player, source, this.manager.createOpenOptions(player, cost, false), cost, amount);
                     });
                 })
                 .build()

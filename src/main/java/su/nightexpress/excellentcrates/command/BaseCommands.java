@@ -13,6 +13,8 @@ import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.CrateSource;
 import su.nightexpress.excellentcrates.crate.impl.OpenOptions;
 import su.nightexpress.excellentcrates.key.CrateKey;
+import su.nightexpress.excellentcrates.user.CrateUser;
+import su.nightexpress.excellentcrates.user.OpeningSoundMode;
 import su.nightexpress.nightcore.commands.Arguments;
 import su.nightexpress.nightcore.commands.Commands;
 import su.nightexpress.nightcore.commands.builder.HubNodeBuilder;
@@ -44,6 +46,12 @@ public class BaseCommands {
                 plugin.doReload(context.getSender());
                 return true;
             })
+        );
+
+        nodeBuilder.branch(Commands.literal("save")
+            .description(Lang.COMMAND_SAVE_DESC)
+            .permission(Perms.COMMAND_SAVE)
+            .executes(this::save)
         );
 
         nodeBuilder.branch(Commands.hub("key")
@@ -164,6 +172,14 @@ public class BaseCommands {
             )
             .executes(this::resetCrateCooldown)
         );
+
+        nodeBuilder.branch(Commands.literal("sound")
+            .description(Lang.COMMAND_SOUND_DESC)
+            .permission(Perms.COMMAND_SOUND)
+            .playerOnly()
+            .withArguments(Arguments.string(CommandArguments.MODE).suggestions((reader, context) -> Lists.newList("self", "all", "none")))
+            .executes(this::setSoundMode)
+        );
     }
 
     @NotNull
@@ -207,6 +223,13 @@ public class BaseCommands {
 
     private boolean openEditor(@NotNull CommandContext context) {
         plugin.getEditorManager().openEditor(context.getPlayerOrThrow());
+        return true;
+    }
+
+    private boolean save(@NotNull CommandContext context, @NotNull ParsedArguments arguments) {
+        plugin.getCrateManager().saveCratesForce();
+        plugin.getKeyManager().saveKeysForce();
+        Lang.COMMAND_SAVE_DONE.message().send(context.getSender());
         return true;
     }
 
@@ -305,6 +328,25 @@ public class BaseCommands {
                 .replace(crate.replacePlaceholders())
             );
         });
+        return true;
+    }
+
+    private boolean setSoundMode(@NotNull CommandContext context, @NotNull ParsedArguments arguments) {
+        Player player = context.getPlayerOrThrow();
+        CrateUser user = plugin.getUserManager().getOrFetch(player);
+
+        OpeningSoundMode mode;
+        try {
+            mode = OpeningSoundMode.valueOf(arguments.getString(CommandArguments.MODE).toUpperCase());
+        }
+        catch (IllegalArgumentException exception) {
+            return false;
+        }
+
+        user.setOpeningSoundMode(mode);
+        plugin.getUserManager().save(user);
+
+        Lang.COMMAND_SOUND_DONE.message().send(player, replacer -> replacer.replace(Placeholders.GENERIC_VALUE, mode.name()));
         return true;
     }
 

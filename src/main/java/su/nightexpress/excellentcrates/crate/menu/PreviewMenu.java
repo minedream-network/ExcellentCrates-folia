@@ -4,6 +4,7 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.MenuType;
 import org.jetbrains.annotations.NotNull;
 import su.nightexpress.excellentcrates.CratesPlugin;
@@ -78,44 +79,52 @@ public class PreviewMenu extends LinkedMenu<CratesPlugin, CrateSource> implement
 
         autoFill.setSlots(this.rewardSlots);
         autoFill.setItems((this.hideUnavailable ? crate.getRewards(player) : crate.getRewards()).stream().filter(Reward::isRollable).toList());
-        autoFill.setItemCreator(reward -> {
-            List<String> restrictions = new ArrayList<>();
-            List<String> limits = new ArrayList<>();
-
-            if (reward.fitRequirements(player)) {
-                if (reward.getLimits().isEnabled() && reward.getLimits().isAmountLimited()) {
-                    limits.addAll(Replacer.create()
-                        .replace(GENERIC_AMOUNT, () -> String.valueOf(reward.getAvailableRolls(player)))
-                        .apply(this.limitsLore)
-                    );
-                }
-            }
-            else {
-                restrictions.addAll(this.noPermissionLore);
-            }
-
-            return NightItem.fromItemStack(reward.getPreviewItem())
-                .ignoreNameAndLore()
-                .setDisplayName(this.rewardName)
-                .setLore(this.rewardLore)
-                .replacement(replacer -> {
-                        replacer
-                            .replace(GENERIC_LIMITS, limits)
-                            .replace(NO_PERMISSION, restrictions)
-                            .replace("%win_limit_amount%", limits)
-                            .replace("%win_limit_cooldown%", Collections.emptyList())
-                            .replace("%win_limit_drained%", Collections.emptyList())
-                            .replace("%win_limit_no_permission%", restrictions)
-                            .replace(reward.replacePlaceholders())
-                            .replace(crate.replacePlaceholders());
-                        if (this.applyPlaceholderAPI) {
-                            replacer.replacePlaceholderAPI(player);
-                        }
-                    }
-                );
-        });
+        autoFill.setItemCreator(reward -> this.createRewardIcon(player, crate, reward));
 
         return autoFill.build();
+    }
+
+    @NotNull
+    public ItemStack createRewardItem(@NotNull Player player, @NotNull Crate crate, @NotNull Reward reward) {
+        return this.createRewardIcon(player, crate, reward).getItemStack();
+    }
+
+    @NotNull
+    public NightItem createRewardIcon(@NotNull Player player, @NotNull Crate crate, @NotNull Reward reward) {
+        List<String> restrictions = new ArrayList<>();
+        List<String> limits = new ArrayList<>();
+
+        if (reward.fitRequirements(player)) {
+            if (reward.getLimits().isEnabled() && reward.getLimits().isAmountLimited()) {
+                limits.addAll(Replacer.create()
+                    .replace(GENERIC_AMOUNT, () -> String.valueOf(reward.getAvailableRolls(player)))
+                    .apply(this.limitsLore)
+                );
+            }
+        }
+        else {
+            restrictions.addAll(this.noPermissionLore);
+        }
+
+        return NightItem.fromItemStack(reward.getPreviewItem())
+            .ignoreNameAndLore()
+            .setDisplayName(this.rewardName)
+            .setLore(this.rewardLore)
+            .replacement(replacer -> {
+                    replacer
+                        .replace(GENERIC_LIMITS, limits)
+                        .replace(NO_PERMISSION, restrictions)
+                        .replace("%win_limit_amount%", limits)
+                        .replace("%win_limit_cooldown%", Collections.emptyList())
+                        .replace("%win_limit_drained%", Collections.emptyList())
+                        .replace("%win_limit_no_permission%", restrictions)
+                        .replace(reward.replacePlaceholders())
+                        .replace(crate.replacePlaceholders());
+                    if (this.applyPlaceholderAPI) {
+                        replacer.replacePlaceholderAPI(player);
+                    }
+                }
+            );
     }
 
     @Override

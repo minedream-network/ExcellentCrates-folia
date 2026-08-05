@@ -13,6 +13,7 @@ public class CrateDialogs {
     public static final DialogKey<Crate>                         CRATE_PREVIEW            = new DialogKey<>("crate_preview");
     public static final DialogKey<Crate>                         CRATE_OPENING            = new DialogKey<>("crate_opening");
     public static final DialogKey<Crate>                         CRATE_OPENING_LIMITS     = new DialogKey<>("crate_opening_limits");
+    public static final DialogKey<Crate>                         CRATE_REROLL             = new DialogKey<>("crate_reroll");
     public static final DialogKey<Crate>                         CRATE_EFFECT             = new DialogKey<>("crate_effect");
     public static final DialogKey<Crate>                         CRATE_PARTICLE           = new DialogKey<>("crate_particle");
     public static final DialogKey<Crate>                         CRATE_HOLOGRAM           = new DialogKey<>("crate_hologram");
