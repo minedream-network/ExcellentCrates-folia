@@ -17,17 +17,21 @@ import static su.nightexpress.nightcore.util.text.night.wrapper.TagWrappers.*;
 
 public class Lang implements LangContainer {
 
-    public static final TextLocale COMMAND_ARGUMENT_NAME_CRATE = LangEntry.builder("Command.Argument.Name.Crate").text("crate");
-    public static final TextLocale COMMAND_ARGUMENT_NAME_KEY   = LangEntry.builder("Command.Argument.Name.Key").text("key");
-    public static final TextLocale COMMAND_ARGUMENT_NAME_X     = LangEntry.builder("Command.Argument.Name.X").text("x");
-    public static final TextLocale COMMAND_ARGUMENT_NAME_Y     = LangEntry.builder("Command.Argument.Name.Y").text("y");
-    public static final TextLocale COMMAND_ARGUMENT_NAME_Z     = LangEntry.builder("Command.Argument.Name.Z").text("z");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_CRATE      = LangEntry.builder("Command.Argument.Name.Crate").text("crate");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_KEY        = LangEntry.builder("Command.Argument.Name.Key").text("key");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_MAX_AMOUNT = LangEntry.builder("Command.Argument.Name.MaxAmount").text("max-amount");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_X          = LangEntry.builder("Command.Argument.Name.X").text("x");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_Y          = LangEntry.builder("Command.Argument.Name.Y").text("y");
+    public static final TextLocale COMMAND_ARGUMENT_NAME_Z          = LangEntry.builder("Command.Argument.Name.Z").text("z");
 
     public static final MessageLocale ERROR_COMMAND_INVALID_CRATE_ARGUMENT = LangEntry.builder("Error.Command.Argument.InvalidCrate").chatMessage(
         GRAY.wrap(SOFT_RED.wrap(GENERIC_VALUE) + " is not a valid crate!"));
 
     public static final MessageLocale ERROR_COMMAND_INVALID_KEY_ARGUMENT = LangEntry.builder("Error.Command.Argument.InvalidKey").chatMessage(
         GRAY.wrap(SOFT_RED.wrap(GENERIC_VALUE) + " is not a valid key!"));
+
+    public static final MessageLocale ERROR_COMMAND_INVALID_AMOUNT_RANGE = LangEntry.builder("Error.Command.Argument.InvalidAmountRange").chatMessage(
+        GRAY.wrap(SOFT_RED.wrap("Maximum amount must be greater than or equal to minimum amount.")));
 
     public static final TextLocale COMMAND_SAVE_DESC           = LangEntry.builder("Command.Save.Desc").text("Force save crates and keys.");
     public static final TextLocale COMMAND_EDITOR_DESC         = LangEntry.builder("Command.Editor.Desc").text("Open editor GUI.");
@@ -37,7 +41,7 @@ public class Lang implements LangContainer {
     public static final TextLocale COMMAND_OPEN_FOR_DESC       = LangEntry.builder("Command.OpenFor.Desc").text("Open crate for a player.");
     public static final TextLocale COMMAND_GIVE_DESC           = LangEntry.builder("Command.Give.Desc").text("Gives crate to a player.");
     public static final TextLocale COMMAND_KEY_DESC            = LangEntry.builder("Command.Key.Desc").text("Manage player's keys.");
-    public static final TextLocale COMMAND_KEY_GIVE_DESC       = LangEntry.builder("Command.Key.Give.Desc").text("Give key to a player.");
+    public static final TextLocale COMMAND_KEY_GIVE_DESC       = LangEntry.builder("Command.Key.Give.Desc").text("Give a fixed or random amount of keys to a player.");
     public static final TextLocale COMMAND_KEY_TAKE_DESC       = LangEntry.builder("Command.Key.Take.Desc").text("Take key from a player.");
     public static final TextLocale COMMAND_KEY_SET_DESC        = LangEntry.builder("Command.Key.Set.Desc").text("Set keys amount for a player.");
     public static final TextLocale COMMAND_KEY_INSPECT_DESC    = LangEntry.builder("Command.Key.Show.Desc").text("Inspect [player's] virtual keys.");

@@ -1,5 +1,6 @@
 package su.nightexpress.excellentcrates.hologram;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -25,29 +26,39 @@ import su.nightexpress.nightcore.util.Plugins;
 import su.nightexpress.nightcore.util.placeholder.Replacer;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class HologramManager extends AbstractManager<CratesPlugin> {
 
     private final Map<String, FakeDisplay> displayMap;
+    private final FoliaScheduler           scheduler;
+    private final AtomicLong               generation;
 
-    private HologramHandler handler;
+    private volatile HologramHandler handler;
 
     public HologramManager(@NotNull CratesPlugin plugin) {
         super(plugin);
-        this.displayMap = new HashMap<>();
+        this.displayMap = new ConcurrentHashMap<>();
+        this.scheduler = new FoliaScheduler(plugin);
+        this.generation = new AtomicLong();
     }
 
     @Override
     protected void onLoad() {
+        this.generation.incrementAndGet();
+
         if (this.detectHandler()) {
             this.addListener(new HologramListener(this.plugin, this));
 
-            this.addAsyncTask(this::tickHolograms, Config.CRATE_HOLOGRAM_UPDATE_INTERVAL.get());
+            this.addTask(this::tickHolograms, Config.CRATE_HOLOGRAM_UPDATE_INTERVAL.get());
         }
     }
 
     @Override
     protected void onShutdown() {
+        this.generation.incrementAndGet();
+
         this.displayMap.values().forEach(this::discard);
         this.displayMap.clear();
 
@@ -75,7 +86,7 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
         this.plugin.getCrateManager().getCrates().forEach(crate -> {
             if (!crate.isHologramEnabled()) return;
 
-            this.render(crate);
+            this.renderNow(crate);
         });
     }
 
@@ -146,8 +157,12 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
     }
 
     public void removeForViewer(@NotNull Player player, @NotNull FakeEntityGroup group) {
-        group.removeViewer(player);
-        this.handler.sendDestroyEntityPacket(player, group.getEntityIDs());
+        if (!group.removeViewer(player)) return;
+
+        HologramHandler handler = this.handler;
+        if (handler != null) {
+            handler.sendDestroyEntityPacket(player, group.getEntityIDs());
+        }
     }
 
     public void discard(@NotNull Crate crate) {
@@ -162,18 +177,48 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
     }
 
     public void discard(@NotNull FakeEntityGroup group) {
-        group.clearViewers();
-        this.handler.sendDestroyEntityPacket(group.getEntityIDs());
+        long groupGeneration = group.setAvailable(false);
+
+        Set<UUID> viewers = group.clearViewers();
+        if (viewers.isEmpty()) return;
+
+        HologramHandler handler = this.handler;
+        Set<Integer> entityIds = group.getEntityIDs();
+        if (handler == null || entityIds.isEmpty()) return;
+
+        this.scheduler.runTask(() -> viewers.forEach(viewerId -> {
+            Player player = Bukkit.getPlayer(viewerId);
+            if (player == null) return;
+
+            this.scheduler.runTask(player, () -> {
+                if (group.getAvailabilityGeneration() == groupGeneration) {
+                    handler.sendDestroyEntityPacket(player, entityIds);
+                }
+            });
+        }));
     }
 
     public void render(@NotNull Crate crate) {
+        long generation = this.generation.get();
+        this.scheduler.runTask(() -> {
+            if (this.generation.get() == generation) {
+                this.renderNow(crate);
+            }
+        });
+    }
+
+    private void renderNow(@NotNull Crate crate) {
+        long generation = this.generation.get();
         this.createIfAbsent(crate);
 
         FakeDisplay display = this.getDisplay(crate);
         if (display == null) return;
 
-        List<String> text = Replacer.create().replace(crate.replacePlaceholders()).apply(crate.getHologramText().reversed());
+        List<String> text = List.copyOf(Replacer.create().replace(crate.replacePlaceholders()).apply(crate.getHologramText().reversed()));
         if (text.isEmpty()) return;
+
+        Map<UUID, Player> onlinePlayers = new HashMap<>();
+        Bukkit.getOnlinePlayers().forEach(player -> onlinePlayers.put(player.getUniqueId(), player));
 
         for (FakeEntityGroup group : display.getGroups()) {
             if (group.isDisabled()) continue;
@@ -182,51 +227,64 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
             Location location = blockPosition.toLocation();
             if (location == null) continue;
 
-            new FoliaScheduler(this.plugin).runTask(location, () -> {
-                World world = blockPosition.getWorld();
-                if (!blockPosition.isChunkLoaded() || world == null) {
+            this.scheduler.runTask(location, () -> {
+                if (this.generation.get() != generation) return;
+
+                World world = location.getWorld();
+                int chunkX = blockPosition.getX() >> 4;
+                int chunkZ = blockPosition.getZ() >> 4;
+                if (world == null || !world.isChunkLoaded(chunkX, chunkZ)) {
                     this.discard(group); // Remove all viewers and send entity destroy packet.
                     return;
                 }
 
-                List<Player> players = new ArrayList<>(world.getPlayers());
-                players.removeIf(player -> {
-                    if (CrateUtils.isInEffectRange(player, location)) return false;
-
-                    this.removeForViewer(player, group);
-                    return true;
-                });
-
-                if (players.isEmpty()) {
-                    this.discard(group); // Remove all viewers and send entity destroy packet.
-                    return;
-                }
-
-                players.removeIf(player -> {
-                    if (!group.isHiddenFor(player)) return false;
-
-                    if (group.isViewer(player)) {
-                        this.removeForViewer(player, group);
-                    }
-                    return true;
-                });
-
-                players.forEach(player -> {
-                    boolean needSpawn = !group.isViewer(player);
-
-                    List<String> hologramText = Replacer.create().replacePlaceholderAPI(player).apply(text);
-                    List<FakeEntity> holograms = group.getEntities();
-                    for (int index = 0; index < holograms.size(); index++) {
-                        // Fix for fake entity's text not being updated/replaced when text size is less than holograms amount, so force it to empty string.
-                        String line = index >= hologramText.size() ? "" : hologramText.get(index);
-                        FakeEntity entity = holograms.get(index);
-                        this.handler.sendHologramPackets(player, entity, needSpawn, line);
-                    }
-
-                    group.addViewer(player);
-                });
+                long groupGeneration = group.setAvailable(true);
+                Set<Player> players = new HashSet<>(world.getPlayersSeeingChunk(chunkX, chunkZ));
+                group.getViewerIds().stream().map(onlinePlayers::get).filter(Objects::nonNull).forEach(players::add);
+                players.forEach(player -> this.scheduler.runTask(player, () -> this.renderForViewer(player, group, location, text, generation, groupGeneration)));
             });
         }
+    }
+
+    private void renderForViewer(@NotNull Player player,
+                                 @NotNull FakeEntityGroup group,
+                                 @NotNull Location location,
+                                 @NotNull List<String> text,
+                                 long generation,
+                                 long groupGeneration) {
+        if (this.generation.get() != generation || group.getAvailabilityGeneration() != groupGeneration) return;
+
+        if (!group.isAvailable() || group.isDisabled() || group.isHiddenFor(player) || !CrateUtils.isInEffectRange(player, location)) {
+            this.removeForViewer(player, group);
+            return;
+        }
+
+        boolean needSpawn = !group.isViewer(player);
+        List<FakeEntity> holograms = group.getEntities();
+        if (holograms.isEmpty()) return;
+
+        List<String> renderedText = new ArrayList<>(holograms.size());
+        List<String> hologramText = Replacer.create().replacePlaceholderAPI(player).apply(text);
+
+        for (int index = 0; index < holograms.size(); index++) {
+            renderedText.add(index >= hologramText.size() ? "" : hologramText.get(index));
+        }
+
+        if (!needSpawn && group.hasRenderedText(player, renderedText)) return;
+
+        HologramHandler handler = this.handler;
+        if (handler == null) return;
+
+        if (needSpawn && groupGeneration > 0) {
+            handler.sendDestroyEntityPacket(player, group.getEntityIDs());
+        }
+
+        for (int index = 0; index < holograms.size(); index++) {
+            handler.sendHologramPackets(player, holograms.get(index), needSpawn, renderedText.get(index));
+        }
+
+        group.addViewer(player);
+        group.setRenderedText(player, renderedText);
     }
 
     private void createIfAbsent(@NotNull Crate crate) {
@@ -237,17 +295,22 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
         if (originText.isEmpty()) return;
 
         FakeDisplay display = new FakeDisplay();
+        if (this.displayMap.putIfAbsent(crate.getId(), display) != null) return;
 
         double yOffset = crate.getHologramYOffset() + 0.2;
         double lineGap = Config.CRATE_HOLOGRAM_LINE_GAP.get();
+        long generation = this.generation.get();
 
+        boolean scheduled = false;
         for (WorldPos blockPos : crate.getBlockPositions()) {
             Location loc = blockPos.toLocation();
             if (loc == null) continue;
 
-            new FoliaScheduler(this.plugin).runTask(loc, () -> {
-                Block block = blockPos.toBlock();
-                if (block == null) return;
+            scheduled = true;
+            this.scheduler.runTask(loc, () -> {
+                if (this.generation.get() != generation) return;
+
+                Block block = loc.getBlock();
 
                 double height = block.getBoundingBox().getHeight() / 2D + yOffset;
 
@@ -264,6 +327,8 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
             });
         }
 
-        this.displayMap.put(crate.getId(), display);
+        if (!scheduled) {
+            this.displayMap.remove(crate.getId(), display);
+        }
     }
 }

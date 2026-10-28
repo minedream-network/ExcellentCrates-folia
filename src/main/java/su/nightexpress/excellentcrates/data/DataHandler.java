@@ -25,10 +25,15 @@ import su.nightexpress.nightcore.db.sql.query.impl.SelectQuery;
 import su.nightexpress.nightcore.db.sql.query.type.ValuedQuery;
 import su.nightexpress.nightcore.util.Lists;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser> {
 
@@ -247,6 +252,17 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
         this.update(this.tableCrateData, DataQueries.CRATE_DATA_UPDATE, datas);
     }
 
+    public boolean updateCrateDatasChecked(@NotNull Set<GlobalCrateData> datas) {
+        return this.updateOrInsertChecked(
+            this.tableCrateData,
+            DataQueries.CRATE_DATA_UPDATE,
+            DataQueries.CRATE_DATA_INSERT,
+            datas,
+            GlobalCrateData::isPersisted,
+            GlobalCrateData::markPersisted
+        );
+    }
+
     public void deleteCrateData(@NotNull GlobalCrateData data) {
         this.delete(this.tableCrateData, DataQueries.CRATE_DATA_DELETE, data);
     }
@@ -274,6 +290,74 @@ public class DataHandler extends AbstractUserDataManager<CratesPlugin, CrateUser
 
     public void updateRewardLimits(@NotNull Set<RewardData> limits) {
         this.update(this.tableRewardLimits, DataQueries.REWARD_LIMIT_UPDATE, limits);
+    }
+
+    public boolean updateRewardLimitsChecked(@NotNull Set<RewardData> limits) {
+        return this.updateOrInsertChecked(
+            this.tableRewardLimits,
+            DataQueries.REWARD_LIMIT_UPDATE,
+            DataQueries.REWARD_LIMIT_INSERT,
+            limits,
+            RewardData::isPersisted,
+            RewardData::markPersisted
+        );
+    }
+
+    private <T> boolean updateOrInsertChecked(@NotNull String table,
+                                              @NotNull su.nightexpress.nightcore.db.sql.query.type.AbstractQuery<T> update,
+                                              @NotNull su.nightexpress.nightcore.db.sql.query.type.AbstractQuery<T> insert,
+                                              @NotNull Collection<T> values,
+                                              @NotNull Predicate<T> persisted,
+                                              @NotNull Consumer<T> markPersisted) {
+        if (values.isEmpty()) return true;
+
+        List<T> ordered = new ArrayList<>(values);
+        try (Connection connection = this.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement updateStatement = connection.prepareStatement(update.createSQL(table));
+                 PreparedStatement insertStatement = connection.prepareStatement(insert.createSQL(table))) {
+                List<T> inserted = new ArrayList<>();
+                for (T value : ordered) {
+                    if (persisted.test(value)) {
+                        update.onExecute(updateStatement, value);
+                        updateStatement.addBatch();
+                    }
+                    else {
+                        insert.onExecute(insertStatement, value);
+                        insertStatement.addBatch();
+                        inserted.add(value);
+                    }
+                }
+
+                int[] results = updateStatement.executeBatch();
+                for (int result : results) {
+                    if (result == Statement.EXECUTE_FAILED) {
+                        connection.rollback();
+                        return false;
+                    }
+                }
+
+                if (!isBatchSuccessful(insertStatement.executeBatch())) {
+                    connection.rollback();
+                    return false;
+                }
+                connection.commit();
+                inserted.forEach(markPersisted);
+                return true;
+            }
+            catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+        catch (SQLException exception) {
+            exception.printStackTrace();
+            return false;
+        }
+    }
+
+    private static boolean isBatchSuccessful(int @NotNull [] results) {
+        return Arrays.stream(results).allMatch(result -> result > 0 || result == Statement.SUCCESS_NO_INFO);
     }
 
     public void deleteRewardLimit(@NotNull RewardData limit) {

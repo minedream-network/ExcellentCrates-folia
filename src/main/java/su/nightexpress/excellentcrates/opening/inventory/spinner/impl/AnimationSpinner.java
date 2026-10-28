@@ -10,7 +10,6 @@ import su.nightexpress.nightcore.util.bukkit.NightItem;
 import su.nightexpress.nightcore.util.random.Rnd;
 import su.nightexpress.nightcore.util.random.WeightedItem;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class AnimationSpinner extends AbstractSpinner {
@@ -30,6 +29,6 @@ public class AnimationSpinner extends AbstractSpinner {
     @Override
     @NotNull
     public ItemStack createItem(int slot) {
-        return this.items.isEmpty() ? new ItemStack(Material.AIR) : Rnd.getByWeight(new ArrayList<>(this.items)).getItemStack();
+        return this.items.isEmpty() ? new ItemStack(Material.AIR) : Rnd.getByWeight(this.items).getItemStack();
     }
 }

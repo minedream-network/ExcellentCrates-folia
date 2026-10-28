@@ -18,7 +18,7 @@ Command:
     Error:
       Player: '&cImpossible de traiter l''opération pour un joueur hors ligne/invalide &e%player_name%&c!'
     Give:
-      Usage: <player | *> <keyId> <amount>
+      Usage: <player | *> <keyId> <amount> [max-amount]
       Desc: Donner une clé de caisse à un joueur.
       Done: Don de &a%amount%x &7clé &a%key_name% &7pour &a%player_name%&7.
       Notify: Vous avez reçu &a%amount%x &7clé &a%key_name%&7!

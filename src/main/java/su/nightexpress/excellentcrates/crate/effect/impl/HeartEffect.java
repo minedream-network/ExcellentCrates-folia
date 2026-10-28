@@ -13,7 +13,7 @@ public class HeartEffect extends CrateEffect {
 
     private static final int POINTS = 20;
 
-    private boolean rotate = false;
+    private volatile boolean rotate = false;
 
     public HeartEffect() {
         super(EffectId.HEART, 1L, POINTS);
@@ -46,9 +46,11 @@ public class HeartEffect extends CrateEffect {
 
         particle.play(player, left, 0, 1);
         particle.play(player, right, 0, 1);
+    }
 
-        if (step == 0) {
-            this.rotate = !this.rotate;
-        }
+    @Override
+    public void complete() {
+        this.rotate = !this.rotate;
+        super.complete();
     }
 }

@@ -9,11 +9,11 @@ import org.bukkit.inventory.MenuType;
 import org.jetbrains.annotations.NotNull;
 import su.nightexpress.excellentcrates.CratesPlugin;
 import su.nightexpress.excellentcrates.api.crate.Reward;
+import su.nightexpress.excellentcrates.hooks.UniItemsMenu;
 import su.nightexpress.nightcore.bridge.wrap.NightSound;
 import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.ui.menu.MenuViewer;
-import su.nightexpress.nightcore.ui.menu.data.ConfigBased;
 import su.nightexpress.nightcore.ui.menu.data.Filled;
 import su.nightexpress.nightcore.ui.menu.data.MenuFiller;
 import su.nightexpress.nightcore.ui.menu.data.MenuLoader;
@@ -34,7 +34,7 @@ import java.util.stream.IntStream;
 import static su.nightexpress.excellentcrates.Placeholders.*;
 import static su.nightexpress.nightcore.util.text.night.wrapper.TagWrappers.*;
 
-public class SelectableMenu extends LinkedMenu<CratesPlugin, SelectableOpening> implements ConfigBased, Filled<Reward> {
+public class SelectableMenu extends LinkedMenu<CratesPlugin, SelectableOpening> implements UniItemsMenu, Filled<Reward> {
 
     private int[]        rewardSlots;
     private String       rewardName;
@@ -170,7 +170,7 @@ public class SelectableMenu extends LinkedMenu<CratesPlugin, SelectableOpening> 
             GRAY.wrap("- " + REWARD_NAME)
         ).read(config);
 
-        this.selectedIcon = ConfigValue.create("Selection.Icon",
+        this.selectedIcon = this.plugin.getUniItemsHook().readMaterial(config, "Selection.Icon", Material.LIME_STAINED_GLASS_PANE, () -> ConfigValue.create("Selection.Icon",
             NightItem.fromType(Material.LIME_STAINED_GLASS_PANE)
                 .setDisplayName(GREEN.wrap(BOLD.wrap("Selected: ")) + WHITE.wrap(REWARD_NAME))
                 .setLore(Lists.newList(
@@ -179,7 +179,7 @@ public class SelectableMenu extends LinkedMenu<CratesPlugin, SelectableOpening> 
                     GREEN.wrap("→ " + UNDERLINED.wrap("Click to unselect"))
                 ))
                 .hideAllComponents()
-        ).read(config);
+        ).read(config));
 
         this.selectSound = ConfigValue.create("Selection.Sound-V", VanillaSound.of(Sound.BLOCK_NOTE_BLOCK_IRON_XYLOPHONE)).read(config);
         this.unselectSound = ConfigValue.create("Selection.Sound-X", VanillaSound.of(Sound.BLOCK_GLASS_BREAK)).read(config);

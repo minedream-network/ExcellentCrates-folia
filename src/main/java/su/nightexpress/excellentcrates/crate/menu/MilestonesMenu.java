@@ -12,11 +12,11 @@ import su.nightexpress.excellentcrates.config.Config;
 import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.CrateSource;
 import su.nightexpress.excellentcrates.crate.impl.Milestone;
+import su.nightexpress.excellentcrates.hooks.UniItemsMenu;
 import su.nightexpress.excellentcrates.user.CrateUser;
 import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.ui.menu.MenuViewer;
-import su.nightexpress.nightcore.ui.menu.data.ConfigBased;
 import su.nightexpress.nightcore.ui.menu.data.Filled;
 import su.nightexpress.nightcore.ui.menu.data.MenuFiller;
 import su.nightexpress.nightcore.ui.menu.data.MenuLoader;
@@ -35,7 +35,7 @@ import static su.nightexpress.excellentcrates.Placeholders.*;
 import static su.nightexpress.nightcore.util.text.tag.Tags.*;
 
 @SuppressWarnings("UnstableApiUsage")
-public class MilestonesMenu extends LinkedMenu<CratesPlugin, CrateSource> implements Filled<Milestone>, ConfigBased {
+public class MilestonesMenu extends LinkedMenu<CratesPlugin, CrateSource> implements Filled<Milestone>, UniItemsMenu {
 
     private static final String PLACEHOLDER_OPENINGS_LEFT = "%openings_left%";
 
@@ -164,15 +164,15 @@ public class MilestonesMenu extends LinkedMenu<CratesPlugin, CrateSource> implem
         this.mileSlots = ConfigValue.create("Milestones.Slots", new int[]{10,12,14,16}).read(config);
 
         if (ConfigValue.create("Milestones.Completed.Custom_Item.Enabled", true).read(config)) {
-            this.mileCompItem = ConfigValue.create("Milestones.Completed.Custom_Item.Value",
+            this.mileCompItem = this.plugin.getUniItemsHook().readMaterial(config, "Milestones.Completed.Custom_Item.Value", Material.PLAYER_HEAD, () -> ConfigValue.create("Milestones.Completed.Custom_Item.Value",
                 NightItem.asCustomHead(SKIN_CHECK_MARK)
-            ).read(config);
+            ).read(config));
         }
 
         if (ConfigValue.create("Milestones.Incompleted.Custom_Item.Enabled", false).read(config)) {
-            this.mileIncItem = ConfigValue.create("Milestones.Incompleted.Custom_Item.Value",
+            this.mileIncItem = this.plugin.getUniItemsHook().readMaterial(config, "Milestones.Incompleted.Custom_Item.Value", Material.PLAYER_HEAD, () -> ConfigValue.create("Milestones.Incompleted.Custom_Item.Value",
                 NightItem.asCustomHead(SKIN_WRONG_MARK)
-            ).read(config);
+            ).read(config));
         }
 
         this.pointerEnabled = ConfigValue.create("Milestones.Pointer.Enabled", true).read(config);
@@ -181,13 +181,13 @@ public class MilestonesMenu extends LinkedMenu<CratesPlugin, CrateSource> implem
 
         this.pointerSlots = ConfigValue.create("Milestones.Pointer.Slots", new int[]{1,19,3,21,5,23,7,25}).read(config);
 
-        this.pointerComp = ConfigValue.create("Milestones.Pointer.Completed",
+        this.pointerComp = this.plugin.getUniItemsHook().readMaterial(config, "Milestones.Pointer.Completed", Material.LIME_STAINED_GLASS_PANE, () -> ConfigValue.create("Milestones.Pointer.Completed",
             new NightItem(Material.LIME_STAINED_GLASS_PANE)
-        ).read(config);
+        ).read(config));
 
-        this.pointerInc = ConfigValue.create("Milestones.Pointer.Incompleted",
+        this.pointerInc = this.plugin.getUniItemsHook().readMaterial(config, "Milestones.Pointer.Incompleted", Material.WHITE_STAINED_GLASS_PANE, () -> ConfigValue.create("Milestones.Pointer.Incompleted",
             new NightItem(Material.WHITE_STAINED_GLASS_PANE)
-        ).read(config);
+        ).read(config));
 
         loader.addDefaultItem(MenuItem.buildReturn(this, 22, (viewer, event) -> {
             CrateSource source = this.getLink(viewer.getPlayer());

@@ -12,15 +12,19 @@ public class GlobalCrateData {
 
     private final String crateId;
 
-    private UUID latestOpenerId;
-    private String latestOpenerName;
-    private String latestRewardId;
+    private volatile UUID latestOpenerId;
+    private volatile String latestOpenerName;
+    private volatile String latestRewardId;
 
-    private boolean dirty;
+    private volatile boolean dirty;
+    private volatile boolean persisted = true;
+    private volatile long    revision;
 
     @NotNull
     public static GlobalCrateData create(@NotNull Crate crate) {
-        return new GlobalCrateData(crate.getId(), null, null, null);
+        GlobalCrateData data = new GlobalCrateData(crate.getId(), null, null, null);
+        data.persisted = false;
+        return data;
     }
 
     public GlobalCrateData(@NotNull String crateId,
@@ -37,8 +41,29 @@ public class GlobalCrateData {
         return this.dirty;
     }
 
-    public void setDirty(boolean dirty) {
+    public synchronized void setDirty(boolean dirty) {
         this.dirty = dirty;
+        if (dirty) {
+            this.revision++;
+        }
+    }
+
+    public long getRevision() {
+        return this.revision;
+    }
+
+    public boolean isPersisted() {
+        return this.persisted;
+    }
+
+    public void markPersisted() {
+        this.persisted = true;
+    }
+
+    public synchronized void markSaved(long revision) {
+        if (this.revision == revision) {
+            this.dirty = false;
+        }
     }
 
     public void setLatestOpener(@NotNull Player player) {

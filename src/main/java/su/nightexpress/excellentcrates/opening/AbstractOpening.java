@@ -17,6 +17,7 @@ import su.nightexpress.excellentcrates.crate.impl.CrateSource;
 import su.nightexpress.excellentcrates.data.crate.GlobalCrateData;
 import su.nightexpress.excellentcrates.data.crate.UserCrateData;
 import su.nightexpress.excellentcrates.user.CrateUser;
+import su.nightexpress.excellentcrates.util.CrateUtils;
 import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.Players;
 import su.nightexpress.nightcore.util.placeholder.Replacer;
@@ -44,6 +45,9 @@ public abstract class AbstractOpening implements Opening {
     protected boolean rerollMenuSwitching;
     protected boolean ignoreAnimationOnReroll;
 
+    private boolean forceFinalization;
+    private boolean abortingStart;
+    private boolean refunded;
     private int rerollsUsed;
 
     public AbstractOpening(@NotNull CratesPlugin plugin, @NotNull Player player, @NotNull CrateSource source, @Nullable Cost cost) {
@@ -72,6 +76,36 @@ public abstract class AbstractOpening implements Opening {
         this.onStop();
     }
 
+    public final void forceStop() {
+        if (this.rewardsCompleted || this.refunded) return;
+
+        this.forceFinalization = true;
+        if (this.running) {
+            this.stop();
+        }
+        else if (this.awaitingRewardConfirmation) {
+            this.completeRewards();
+        }
+        else {
+            this.refundAndRemove();
+        }
+    }
+
+    public final void abortStart() {
+        if (this.rewardsCompleted || this.refunded) return;
+
+        this.abortingStart = true;
+        this.forceFinalization = true;
+        try {
+            if (this.running) {
+                this.stop();
+            }
+        }
+        finally {
+            this.refundAndRemove();
+        }
+    }
+
     @Override
     public void tick() {
         if (!this.running) {
@@ -81,7 +115,7 @@ public abstract class AbstractOpening implements Opening {
             }
 
             if (!this.awaitingRewardConfirmation || this.rewardsCompleted) {
-                this.plugin.getOpeningManager().removeOpening(this.player);
+                this.plugin.getOpeningManager().removeOpening(this.player, this);
             }
             return;
         }
@@ -120,28 +154,44 @@ public abstract class AbstractOpening implements Opening {
     protected abstract void onComplete();
 
     protected void onStop() {
-        if (this.isRefundable()) {
-            if (this.cost != null) {
-                this.cost.refundAll(this.player);
-            }
-            if (this.source.getItem() != null) {
-                Players.addItem(this.player, this.crate.getItemStack());
-            }
+        if (this.abortingStart || this.isRefundable()) {
+            this.refundAndRemove();
+            return;
         }
 
-        if (this.isCompleted()) {
+        if (this.isCompleted() && !this.forceFinalization && this.player.isOnline()) {
             if (this.shouldConfirmRewards()) {
                 this.openRerollMenu(false);
                 return;
             }
-
-            this.completeRewards();
-            return;
         }
 
+        this.completeRewards();
+    }
+
+    private void refundAndRemove() {
+        if (this.refunded || this.rewardsCompleted) return;
+
+        this.refunded = true;
         this.awaitingRewardConfirmation = false;
         this.rerollMenuSwitching = false;
-        this.plugin.getOpeningManager().removeOpening(this.getPlayer());
+
+        try {
+            if (this.cost != null) {
+                this.cost.refundAll(this.player);
+            }
+        }
+        finally {
+            try {
+                if (this.source.getItem() != null) {
+                    Players.addItem(this.player, this.crate.getItemStack());
+                }
+            }
+            finally {
+                this.plugin.getDataManager().releaseRewards(this.player, this.rewards);
+                this.plugin.getOpeningManager().removeOpening(this.getPlayer(), this);
+            }
+        }
     }
 
     public boolean isAwaitingRewardConfirmation() {
@@ -219,18 +269,27 @@ public abstract class AbstractOpening implements Opening {
     public boolean rerollRewards() {
         if (!this.awaitingRewardConfirmation || !this.canReroll()) return false;
 
-        this.rerollsUsed++;
+        try {
+            if (this.rerollWithAnimation()) {
+                this.rerollsUsed++;
+                return true;
+            }
 
-        if (this.rerollWithAnimation()) {
+            int amount = Math.max(1, this.rewards.size());
+            this.plugin.getDataManager().replaceReservedRewards(this.player, this.rewards, () -> {
+                IntStream.range(0, amount).forEach(index -> this.rewards.add(this.crate.rollRewardReserved(this.player)));
+            });
+
+            this.rerollsUsed++;
+            this.openRerollMenu(true);
             return true;
         }
-
-        int amount = Math.max(1, this.rewards.size());
-        this.rewards.clear();
-        IntStream.range(0, amount).forEach(index -> this.rewards.add(this.crate.rollReward(this.player)));
-
-        this.openRerollMenu(true);
-        return true;
+        catch (RuntimeException exception) {
+            this.plugin.error("Could not reroll rewards for '" + this.player.getName() + "'.");
+            exception.printStackTrace();
+            this.openRerollMenu(true);
+            return false;
+        }
     }
 
     public boolean canReroll() {
@@ -272,20 +331,50 @@ public abstract class AbstractOpening implements Opening {
         this.awaitingRewardConfirmation = false;
         this.rerollMenuSwitching = false;
         this.rewardsCompleted = true;
-        this.plugin.getOpeningManager().removeOpening(this.getPlayer());
-        this.onComplete();
+        this.plugin.getOpeningManager().removeOpening(this.getPlayer(), this);
+        try {
+            this.onComplete();
+        }
+        catch (RuntimeException exception) {
+            this.plugin.error("Could not complete crate opening visuals for '" + this.player.getName() + "'.");
+            exception.printStackTrace();
+        }
 
-        CrateUser user = plugin.getUserManager().getOrFetch(player);
-        UserCrateData userData = user.getCrateData(this.crate);
-        GlobalCrateData globalData = plugin.getDataManager().getCrateDataOrCreate(this.crate);
+        CrateUser user = null;
+        UserCrateData userData = null;
+        try {
+            user = plugin.getUserManager().getOrFetch(player);
+            userData = user.getCrateData(this.crate);
+            GlobalCrateData globalData = plugin.getDataManager().getCrateDataOrCreate(this.crate);
 
-        userData.addOpenings(1);
-        globalData.setLatestOpener(this.player);
-        globalData.setDirty(true);
+            userData.addOpenings(1);
+            globalData.setLatestOpener(this.player);
+            globalData.setDirty(true);
+        }
+        catch (RuntimeException exception) {
+            this.plugin.error("Could not update opening data for '" + this.player.getName() + "'. Rewards will still be attempted.");
+            exception.printStackTrace();
+        }
 
-        this.rewards.forEach(reward -> reward.give(this.player));
+        List<String> commandQueue = new ArrayList<>();
+        try {
+            for (Reward reward : this.rewards) {
+                try {
+                    this.plugin.getCrateManager().giveReservedReward(this.player, reward, commandQueue);
+                }
+                catch (RuntimeException exception) {
+                    this.plugin.error("Could not give reward '" + reward.getId() + "' to '" + this.player.getName() + "'.");
+                    exception.printStackTrace();
+                }
+            }
+        }
+        finally {
+            // Commits remove their reservation; this only releases entries left by a failed reward integration.
+            this.plugin.getDataManager().releaseRewards(this.player, this.rewards);
+        }
+        CrateUtils.dispatchCommandsOrdered(this.plugin, this.player, commandQueue);
 
-        if (crate.isOpeningCooldownEnabled()) {
+        if (userData != null && crate.isOpeningCooldownEnabled()) {
             userData.addOpeningStreak(1);
 
             if (!userData.isOnCooldown() && !crate.hasCooldownBypassPermission(player)) {
@@ -293,7 +382,7 @@ public abstract class AbstractOpening implements Opening {
             }
         }
 
-        if (crate.hasMilestones()) {
+        if (userData != null && crate.hasMilestones()) {
             userData.addMilestones(1);
             plugin.getCrateManager().triggerMilestones(player, crate, userData.getMilestone());
             if (userData.getMilestone() >= crate.getMaxMilestone() && crate.isMilestonesRepeatable()) {
@@ -309,10 +398,15 @@ public abstract class AbstractOpening implements Opening {
             )
         );
 
-        List<String> postOpenCommands = Replacer.create().replace(this.crate.replacePlaceholders()).apply(this.crate.getPostOpenCommands());
-        Players.dispatchCommands(this.player, postOpenCommands);
+        List<String> postOpenCommands = Replacer.create()
+            .replace(this.crate.replacePlaceholders())
+            .replace(Placeholders.forPlayerWithPAPI(this.player))
+            .apply(this.crate.getPostOpenCommands());
+        CrateUtils.dispatchCommandsOrdered(this.plugin, this.player, postOpenCommands);
 
-        this.plugin.getUserManager().save(user);
+        if (user != null) {
+            this.plugin.getUserManager().save(user);
+        }
     }
 
     public static boolean isRerollMenu(@NotNull Inventory inventory) {

@@ -19,8 +19,13 @@ import su.nightexpress.excellentcrates.crate.impl.CrateSource;
 import su.nightexpress.excellentcrates.opening.world.WorldOpening;
 import su.nightexpress.excellentcrates.user.OpeningSoundMode;
 import su.nightexpress.excellentcrates.util.pos.WorldPos;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.EntityUtil;
 import su.nightexpress.nightcore.util.LocationUtil;
+
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class SimpleRollOpening extends WorldOpening {
 
@@ -29,14 +34,24 @@ public class SimpleRollOpening extends WorldOpening {
     private final int    spinsRequired;
     private final long   spinInterval;
     private final long   initialFinishDelay;
+    private final UUID   playerId;
+    private final FoliaScheduler visualScheduler;
+    private final AtomicBoolean  visualInitPending;
+    private final AtomicBoolean  visualUpdatePending;
+    private final AtomicInteger  visualGeneration;
+    private final String         displayTag;
 
     private Reward reward;
 
     private long spinCount;
     private long finishDelay;
+    private long animationTick;
 
-    private Item     rewardDisplay;
-    private Location displayLocation;
+    private volatile Item     rewardDisplay;
+    private volatile UUID     rewardDisplayId;
+    private volatile Location displayLocation;
+    private volatile boolean  visualReady;
+    private volatile DisplaySnapshot pendingDisplay;
 
     public SimpleRollOpening(@NotNull CratesPlugin plugin,
                              @NotNull Player player,
@@ -50,15 +65,22 @@ public class SimpleRollOpening extends WorldOpening {
         this.spinInterval = spinInterval;
         this.initialFinishDelay = finishDelay;
         this.finishDelay = finishDelay;
+        this.playerId = player.getUniqueId();
+        this.visualScheduler = new FoliaScheduler(plugin);
+        this.visualInitPending = new AtomicBoolean();
+        this.visualUpdatePending = new AtomicBoolean();
+        this.visualGeneration = new AtomicInteger();
+        this.displayTag = DISPLAY_TAG + "_" + player.getUniqueId().toString().replace("-", "");
 
-        this.reward = source.getCrate().rollReward(player);
+        this.reward = source.getCrate().rollRewardReserved(player);
+        this.addReward(this.reward);
     }
 
     private void onFirstTick() {
-        Block block = this.source.getBlock();
+        if (!this.visualInitPending.compareAndSet(false, true)) return;
 
-        Location center;
-        if (block == null) {
+        WorldPos blockPos = this.source.getBlockPos();
+        if (blockPos == null) {
             Location playerLoc = this.player.getEyeLocation().clone();
             Vector direction = playerLoc.getDirection();
 
@@ -66,20 +88,53 @@ public class SimpleRollOpening extends WorldOpening {
                 playerLoc.add(direction);
             }
 
-            center = LocationUtil.setCenter3D(playerLoc);
+            Location center = LocationUtil.setCenter3D(playerLoc);
+            this.displayLocation = center;
+            int generation = this.visualGeneration.get();
+            var task = this.visualScheduler.runTask(center, () -> {
+                try {
+                    if (generation != this.visualGeneration.get()) return;
+
+                    this.cleanupStaleDisplays();
+                    this.visualReady = true;
+                }
+                finally {
+                    this.visualInitPending.set(false);
+                }
+            });
+            if (task == null) {
+                this.visualInitPending.set(false);
+            }
+            return;
         }
-        else {
-            double offset = Math.max(0, this.crate.getHologramYOffset());
-            double height = block.getBoundingBox().getHeight() + offset;
 
-            center = LocationUtil.setCenter2D(block.getLocation()).add(0, height, 0);
-
-            WorldPos blockPos = WorldPos.from(block);
-            this.hideHologram(blockPos);
+        Location blockLocation = blockPos.toLocation();
+        if (blockLocation == null) {
+            this.visualInitPending.set(false);
+            return;
         }
+        int generation = this.visualGeneration.get();
+        var task = this.visualScheduler.runTask(blockLocation, () -> {
+            try {
+                if (generation != this.visualGeneration.get()) return;
 
-        this.displayLocation = center;
-        this.cleanupStaleDisplays();
+                Block ownedBlock = blockLocation.getBlock();
+                double offset = Math.max(0, this.crate.getHologramYOffset());
+                double height = ownedBlock.getBoundingBox().getHeight() + offset;
+
+                this.displayLocation = LocationUtil.setCenter2D(blockLocation).add(0, height, 0);
+
+                this.plugin.runTask(this.player, () -> this.hideHologram(blockPos));
+                this.cleanupStaleDisplays();
+                this.visualReady = true;
+            }
+            finally {
+                this.visualInitPending.set(false);
+            }
+        });
+        if (task == null) {
+            this.visualInitPending.set(false);
+        }
     }
 
     @Override
@@ -110,6 +165,11 @@ public class SimpleRollOpening extends WorldOpening {
 
     @Override
     protected void onTick() {
+        if (!this.visualReady) {
+            this.onFirstTick();
+            return;
+        }
+
         if (this.isSpinsCompleted()) {
             if (this.finishDelay > 0) {
                 this.finishDelay--;
@@ -117,15 +177,15 @@ public class SimpleRollOpening extends WorldOpening {
             return;
         }
 
-        if (this.tickCount == 0) {
-            this.onFirstTick();
+        if (this.isRefundable()) {
             this.setRefundable(false);
         }
 
-        if (this.tickCount % this.spinInterval == 0) {
+        if (this.animationTick % this.spinInterval == 0) {
             this.spin();
             this.displayReward();
         }
+        this.animationTick++;
     }
 
     @Override
@@ -135,13 +195,10 @@ public class SimpleRollOpening extends WorldOpening {
 
     @Override
     protected void onStop() {
-        this.addReward(this.reward);
-
         this.removeRewardDisplay();
 
-        Block block = this.source.getBlock();
-        if (block != null) {
-            WorldPos blockPos = WorldPos.from(block);
+        WorldPos blockPos = this.source.getBlockPos();
+        if (blockPos != null) {
             this.showHologram(blockPos);
         }
 
@@ -163,26 +220,15 @@ public class SimpleRollOpening extends WorldOpening {
 
     private void displayReward() {
         Reward reward = this.isSpinsCompleted() ? this.reward : this.crate.rollReward(this.player);
+        Location location = this.displayLocation;
+        if (location == null) return;
 
-        if (this.rewardDisplay == null) {
-            this.rewardDisplay = player.getWorld().spawn(this.displayLocation, Item.class, item -> item.setVelocity(new Vector()));
-            this.rewardDisplay.setPersistent(false);
-            this.rewardDisplay.addScoreboardTag(DISPLAY_TAG);
-            this.rewardDisplay.setCustomNameVisible(true);
-            this.rewardDisplay.setGravity(false);
-            this.rewardDisplay.setPickupDelay(Integer.MAX_VALUE);
-            this.rewardDisplay.setUnlimitedLifetime(true);
-            this.rewardDisplay.setInvulnerable(true);
-            Bukkit.getOnlinePlayers().stream()
-                .filter(viewer -> viewer != this.player)
-                .forEach(viewer -> viewer.hideEntity(this.plugin, this.rewardDisplay));
-            //this.rewardDisplay.setBillboard(Display.Billboard.CENTER);
-            //this.rewardDisplay.setTransformation(new Transformation(new Vector3f(), new AxisAngle4f(), new Vector3f(0.35f, 0.35f, 0.35f), new AxisAngle4f()));
-        }
-        if (this.rewardDisplay != null) {
-            ItemStack itemStack = reward.getPreviewItem();
-            this.rewardDisplay.setItemStack(itemStack);
-            EntityUtil.setCustomName(this.rewardDisplay, reward.getName());
+        int generation = this.visualGeneration.get();
+        ItemStack itemStack = reward.getPreviewItem();
+        String rewardName = reward.getName();
+        this.pendingDisplay = new DisplaySnapshot(generation, itemStack, rewardName);
+        if (this.visualUpdatePending.compareAndSet(false, true)) {
+            this.scheduleDisplayUpdate(location);
         }
 
         this.playOpeningSound(Sound.UI_BUTTON_CLICK, 0.5f, 1f);
@@ -205,26 +251,43 @@ public class SimpleRollOpening extends WorldOpening {
         this.player.closeInventory();
         this.rerollMenuSwitching = false;
 
-        this.rewards.clear();
+        this.plugin.getDataManager().replaceReservedRewards(this.player, this.rewards, () -> {
+            this.rewards.add(this.crate.rollRewardReserved(this.player));
+        });
         this.tickCount = 0L;
+        this.animationTick = 0L;
         this.spinCount = 0L;
         this.finishDelay = this.initialFinishDelay;
-        this.displayLocation = null;
-        this.reward = this.crate.rollReward(this.player);
-
         this.removeRewardDisplay();
+        this.displayLocation = null;
+        this.visualReady = false;
+        this.visualInitPending.set(false);
+        this.reward = this.rewards.getFirst();
 
         this.start();
         return true;
     }
 
     private void removeRewardDisplay() {
-        if (this.rewardDisplay == null) return;
+        this.visualGeneration.incrementAndGet();
+        this.pendingDisplay = null;
 
-        if (this.rewardDisplay.isValid()) {
-            this.rewardDisplay.remove();
-        }
+        Item display = this.rewardDisplay;
+        UUID displayId = this.rewardDisplayId;
+        Location location = this.displayLocation;
         this.rewardDisplay = null;
+        this.rewardDisplayId = null;
+        if (display == null || location == null) return;
+
+        var task = this.visualScheduler.runTask(location, () -> {
+            this.plugin.getPrivateEntityVisibility().unregister(displayId);
+            if (display.isValid()) {
+                display.remove();
+            }
+        });
+        if (task == null) {
+            this.plugin.getPrivateEntityVisibility().unregister(displayId);
+        }
     }
 
     private void cleanupStaleDisplays() {
@@ -232,30 +295,99 @@ public class SimpleRollOpening extends WorldOpening {
 
         for (Entity entity : this.displayLocation.getWorld().getNearbyEntities(this.displayLocation, 1.5D, 2D, 1.5D)) {
             if (!(entity instanceof Item item)) continue;
-            if (!item.getScoreboardTags().contains(DISPLAY_TAG)) continue;
+            if (!item.getScoreboardTags().contains(this.displayTag)) continue;
 
+            this.plugin.getPrivateEntityVisibility().unregister(item);
             item.remove();
+        }
+    }
+
+    private void scheduleDisplayUpdate(@NotNull Location location) {
+        var task = this.visualScheduler.runTask(location, () -> {
+            try {
+                DisplaySnapshot snapshot = this.pendingDisplay;
+                this.pendingDisplay = null;
+                if (snapshot == null || snapshot.generation() != this.visualGeneration.get()) return;
+
+                if (this.rewardDisplay == null) {
+                    boolean[] privateTracking = new boolean[1];
+                    try {
+                        Item spawned = location.getWorld().spawn(location, Item.class, item -> {
+                            item.setVelocity(new Vector());
+                            item.setPersistent(false);
+                            item.addScoreboardTag(this.displayTag);
+                            item.setCustomNameVisible(true);
+                            item.setGravity(false);
+                            item.setPickupDelay(Integer.MAX_VALUE);
+                            item.setUnlimitedLifetime(true);
+                            item.setInvulnerable(true);
+                            item.setItemStack(snapshot.itemStack());
+                            EntityUtil.setCustomName(item, snapshot.rewardName());
+                            this.rewardDisplayId = item.getUniqueId();
+                            privateTracking[0] = this.plugin.getPrivateEntityVisibility().register(item, this.playerId);
+                        });
+                        if (snapshot.generation() != this.visualGeneration.get()) {
+                            this.plugin.getPrivateEntityVisibility().unregister(this.rewardDisplayId);
+                            this.rewardDisplayId = null;
+                            spawned.remove();
+                            return;
+                        }
+                        this.rewardDisplay = spawned;
+                    }
+                    catch (RuntimeException exception) {
+                        this.plugin.getPrivateEntityVisibility().unregister(this.rewardDisplayId);
+                        this.rewardDisplayId = null;
+                        throw exception;
+                    }
+
+                    if (!privateTracking[0]) {
+                        Item display = this.rewardDisplay;
+                        Bukkit.getOnlinePlayers().stream()
+                            .filter(viewer -> !viewer.getUniqueId().equals(this.playerId))
+                            .forEach(viewer -> this.plugin.runTask(viewer, () -> viewer.hideEntity(this.plugin, display)));
+                    }
+                    return;
+                }
+                this.rewardDisplay.setItemStack(snapshot.itemStack());
+                EntityUtil.setCustomName(this.rewardDisplay, snapshot.rewardName());
+            }
+            finally {
+                this.visualUpdatePending.set(false);
+                if (this.pendingDisplay != null && this.visualUpdatePending.compareAndSet(false, true)) {
+                    this.scheduleDisplayUpdate(location);
+                }
+            }
+        });
+        if (task == null) {
+            this.visualUpdatePending.set(false);
         }
     }
 
     private void playOpeningSound(@NotNull Sound sound, float volume, float pitch) {
         if (this.displayLocation == null || this.displayLocation.getWorld() == null) return;
 
+        Location soundLocation = this.displayLocation.clone();
         Bukkit.getOnlinePlayers().stream()
-            .filter(Player::isOnline)
-            .filter(viewer -> viewer.getWorld().equals(this.displayLocation.getWorld()))
-            .filter(viewer -> this.shouldHearOpeningSound(viewer))
-            .forEach(viewer -> viewer.playSound(this.displayLocation, sound, volume, pitch));
+            .forEach(viewer -> this.plugin.runTask(viewer, () -> {
+                if (!viewer.isOnline() || viewer.getWorld() != soundLocation.getWorld()) return;
+                if (!this.shouldHearOpeningSound(viewer)) return;
+
+                viewer.playSound(soundLocation, sound, volume, pitch);
+            }));
     }
 
     private boolean shouldHearOpeningSound(@NotNull Player viewer) {
-        if (!Config.OPENING_SOUNDS_GLOBAL_ENABLED.get() && !viewer.getUniqueId().equals(this.player.getUniqueId())) {
+        if (!Config.OPENING_SOUNDS_GLOBAL_ENABLED.get() && !viewer.getUniqueId().equals(this.playerId)) {
             return false;
         }
 
         OpeningSoundMode mode = this.plugin.getUserManager().getOrFetch(viewer).getOpeningSoundMode();
         if (mode == OpeningSoundMode.NONE) return false;
-        if (mode == OpeningSoundMode.SELF) return viewer.getUniqueId().equals(this.player.getUniqueId());
+        if (mode == OpeningSoundMode.SELF) return viewer.getUniqueId().equals(this.playerId);
         return true;
+    }
+
+    private record DisplaySnapshot(int generation, @NotNull ItemStack itemStack, @NotNull String rewardName) {
+
     }
 }

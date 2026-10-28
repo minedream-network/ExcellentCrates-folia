@@ -23,6 +23,7 @@ import su.nightexpress.excellentcrates.crate.cost.type.impl.EcoCostType;
 import su.nightexpress.excellentcrates.crate.cost.type.impl.KeyCostType;
 import su.nightexpress.excellentcrates.crate.effect.CrateEffect;
 import su.nightexpress.excellentcrates.crate.effect.EffectId;
+import su.nightexpress.excellentcrates.crate.reward.AbstractReward;
 import su.nightexpress.excellentcrates.crate.reward.RewardFactory;
 import su.nightexpress.excellentcrates.data.crate.GlobalCrateData;
 import su.nightexpress.excellentcrates.hologram.HologramManager;
@@ -45,6 +46,7 @@ import su.nightexpress.nightcore.util.problem.ProblemReporter;
 import su.nightexpress.nightcore.util.profile.CachedProfile;
 import su.nightexpress.nightcore.util.profile.PlayerProfiles;
 import su.nightexpress.nightcore.util.random.Rnd;
+import su.nightexpress.nightcore.util.random.WeightedItem;
 import su.nightexpress.nightcore.util.wrapper.UniParticle;
 
 import java.io.IOException;
@@ -68,6 +70,9 @@ public class Crate implements ConfigBacked {
     private final Set<Milestone>                milestones;
     private final Map<String, Cost>             costMap;
     private final LinkedHashMap<String, Reward> rewardMap;
+
+    private volatile Map<Rarity, List<WeightedItem<Reward>>> rewardWeightTables;
+    private volatile boolean                                  rewardWeightCacheDisabled;
 
     private String      name;
     private List<String> description;
@@ -255,6 +260,7 @@ public class Crate implements ConfigBacked {
             Reward reward = RewardFactory.read(this.plugin, this, sId, config, "Rewards.List." + sId);
             this.rewardMap.put(sId, reward);
         }
+        this.invalidateRewardWeightCache();
 
         // Load milestones only if the feature is enabled.
         if (Config.isMilestonesEnabled()) {
@@ -504,7 +510,65 @@ public class Crate implements ConfigBacked {
     }
 
     @NotNull
+    public Reward rollRewardReserved(@NotNull Player player) {
+        return this.plugin.getDataManager().reserveReward(player, () -> this.rollReward(player));
+    }
+
+    @NotNull
+    public Reward rollRewardReserved(@NotNull Player player, @NotNull Rarity rarity) {
+        return this.plugin.getDataManager().reserveReward(player, () -> this.rollReward(player, rarity));
+    }
+
+    @NotNull
+    public Reward rollRewardReserved(@NotNull Player player, @NotNull Collection<Rarity> allowedRarities) {
+        return this.plugin.getDataManager().reserveReward(player, () -> {
+            Map<Rarity, Double> rarities = new HashMap<>();
+            allowedRarities.forEach(rarity -> {
+                if (this.hasRewards(player, rarity)) {
+                    rarities.put(rarity, rarity.getWeight());
+                }
+            });
+            if (rarities.isEmpty()) throw new IllegalStateException("No rewards available!");
+
+            return this.rollReward(player, Rnd.getByWeight(rarities));
+        });
+    }
+
+    @NotNull
     public Reward rollReward(@Nullable Player player, @Nullable Rarity rarity) {
+        if (this.rewardWeightCacheDisabled) {
+            return this.rollRewardUncached(player, rarity);
+        }
+
+        Map<Rarity, List<WeightedItem<Reward>>> tables = this.getRewardWeightTables();
+
+        if (rarity != null) {
+            return Rnd.getByWeight(this.filterRewardTable(tables.getOrDefault(rarity, Collections.emptyList()), player));
+        }
+
+        List<WeightedItem<Reward>> available = new ArrayList<>();
+        List<WeightedItem<Rarity>> rarities = new ArrayList<>();
+        tables.forEach((rewardRarity, table) -> {
+            int previousSize = available.size();
+            if (player == null) {
+                available.addAll(table);
+            }
+            else {
+                table.stream().filter(entry -> entry.getItem().canWin(player)).forEach(available::add);
+            }
+            if (available.size() > previousSize) {
+                rarities.add(WeightedItem.of(rewardRarity, rewardRarity.getWeight()));
+            }
+        });
+
+        Rarity rarityRoll = Rnd.getByWeight(rarities);
+        available.removeIf(entry -> entry.getItem().getRarity() != rarityRoll);
+
+        return Rnd.getByWeight(available);
+    }
+
+    @NotNull
+    private Reward rollRewardUncached(@Nullable Player player, @Nullable Rarity rarity) {
         List<Reward> rewards = this.getRewards(player, rarity);
 
         // If no rarity is specified, we have to select a random one and filter rewards by selected rarity.
@@ -520,6 +584,35 @@ public class Crate implements ConfigBacked {
         }
 
         return this.rollReward(rewards);
+    }
+
+    @NotNull
+    private List<WeightedItem<Reward>> filterRewardTable(@NotNull List<WeightedItem<Reward>> table, @Nullable Player player) {
+        if (player == null) return table;
+
+        return table.stream().filter(entry -> entry.getItem().canWin(player)).toList();
+    }
+
+    @NotNull
+    private Map<Rarity, List<WeightedItem<Reward>>> getRewardWeightTables() {
+        Map<Rarity, List<WeightedItem<Reward>>> tables = this.rewardWeightTables;
+        if (tables != null) return tables;
+
+        synchronized (this) {
+            if (this.rewardWeightTables == null) {
+                Map<Rarity, List<WeightedItem<Reward>>> rebuilt = new LinkedHashMap<>();
+                this.rewardMap.values().forEach(reward -> rebuilt
+                    .computeIfAbsent(reward.getRarity(), unused -> new ArrayList<>())
+                    .add(WeightedItem.of(reward, reward.getWeight())));
+                rebuilt.replaceAll((rewardRarity, table) -> List.copyOf(table));
+                this.rewardWeightTables = Collections.unmodifiableMap(rebuilt);
+            }
+            return this.rewardWeightTables;
+        }
+    }
+
+    public synchronized void invalidateRewardWeightCache() {
+        this.rewardWeightTables = null;
     }
 
     @NotNull
@@ -847,6 +940,9 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public LinkedHashMap<String, Reward> getRewardsMap() {
+        // shortcut: a live map can be mutated without callbacks, so exposed crates keep the uncached path.
+        this.rewardWeightCacheDisabled = true;
+        this.invalidateRewardWeightCache();
         return this.rewardMap;
     }
 
@@ -890,6 +986,10 @@ public class Crate implements ConfigBacked {
         this.rewardMap.clear();
         this.rewardMap.putAll(rewards.stream().collect(
             Collectors.toMap(Reward::getId, Function.identity(), (has, add) -> add, LinkedHashMap::new)));
+        if (rewards.stream().anyMatch(Predicate.not(AbstractReward.class::isInstance))) {
+            this.rewardWeightCacheDisabled = true;
+        }
+        this.invalidateRewardWeightCache();
     }
 
     @Nullable
@@ -905,6 +1005,10 @@ public class Crate implements ConfigBacked {
 
     public void addReward(@NotNull Reward reward) {
         this.rewardMap.put(reward.getId(), reward);
+        if (!(reward instanceof AbstractReward)) {
+            this.rewardWeightCacheDisabled = true;
+        }
+        this.invalidateRewardWeightCache();
     }
 
     public void removeReward(@NotNull Reward reward) {
@@ -914,6 +1018,7 @@ public class Crate implements ConfigBacked {
 
     public void removeReward(@NotNull String id) {
         this.rewardMap.remove(id);
+        this.invalidateRewardWeightCache();
     }
 
     @NotNull

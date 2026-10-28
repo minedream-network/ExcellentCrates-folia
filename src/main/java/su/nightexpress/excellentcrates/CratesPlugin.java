@@ -17,11 +17,14 @@ import su.nightexpress.excellentcrates.dialog.DialogRegistry;
 import su.nightexpress.excellentcrates.editor.EditorManager;
 import su.nightexpress.excellentcrates.hologram.HologramManager;
 import su.nightexpress.excellentcrates.hooks.impl.PlaceholderHook;
+import su.nightexpress.excellentcrates.hooks.impl.UniItemsHook;
 import su.nightexpress.excellentcrates.key.KeyManager;
 import su.nightexpress.excellentcrates.opening.OpeningManager;
 import su.nightexpress.excellentcrates.opening.ProviderRegistry;
+import su.nightexpress.excellentcrates.opening.world.PrivateEntityVisibility;
 import su.nightexpress.excellentcrates.registry.CratesRegistries;
 import su.nightexpress.excellentcrates.user.UserManager;
+import su.nightexpress.excellentcrates.util.CrateUtils;
 import su.nightexpress.nightcore.NightPlugin;
 import su.nightexpress.nightcore.commands.command.NightCommand;
 import su.nightexpress.nightcore.config.PluginDetails;
@@ -49,6 +52,8 @@ public class CratesPlugin extends NightPlugin {
     private EditorManager   editorManager;
 
     private CrateLogger crateLogger;
+    private UniItemsHook uniItemsHook;
+    private PrivateEntityVisibility privateEntityVisibility;
     private RewardBroadcastFilterRegistry rewardBroadcastFilterRegistry;
 
     @Override
@@ -77,7 +82,11 @@ public class CratesPlugin extends NightPlugin {
 
     @Override
     public void enable() {
+        CrateUtils.startCommandQueues();
         this.crateLogger = new CrateLogger(this);
+        this.uniItemsHook = new UniItemsHook(this);
+        this.privateEntityVisibility = new PrivateEntityVisibility();
+        this.privateEntityVisibility.setup(this);
         this.dialogRegistry = new DialogRegistry(this);
         this.rewardBroadcastFilterRegistry = new RewardBroadcastFilterRegistry();
         this.getServer().getServicesManager().register(
@@ -132,15 +141,18 @@ public class CratesPlugin extends NightPlugin {
 
     @Override
     public void disable() {
+        CrateUtils.beginCommandQueueShutdown();
         if (this.editorManager != null) this.editorManager.shutdown();
-        if (this.openingManager != null) this.openingManager.shutdown();
-        if (this.keyManager != null) this.keyManager.shutdown();
         if (this.crateManager != null) this.crateManager.shutdown();
+        if (this.openingManager != null) this.openingManager.shutdown();
+        if (this.privateEntityVisibility != null) this.privateEntityVisibility.shutdown();
+        if (this.keyManager != null) this.keyManager.shutdown();
         //if (this.menuManager != null) this.menuManager.shutdown();
         if (this.hologramManager != null) this.hologramManager.shutdown();
         if (this.userManager != null) this.userManager.shutdown();
         if (this.dataManager != null) this.dataManager.shutdown();
         if (this.dataHandler != null) this.dataHandler.shutdown();
+        if (this.crateLogger != null) this.crateLogger.shutdown();
         if (this.dialogRegistry != null) this.dialogRegistry.clear();
         if (this.rewardBroadcastFilterRegistry != null) {
             this.getServer().getServicesManager().unregister(RewardBroadcastFilterRegistry.class, this.rewardBroadcastFilterRegistry);
@@ -151,9 +163,12 @@ public class CratesPlugin extends NightPlugin {
             PlaceholderHook.shutdown();
         }
 
+        CrateUtils.shutdownCommandQueues(this);
         CratesRegistries.clear();
         ProviderRegistry.clear();
         this.rewardBroadcastFilterRegistry = null;
+        this.privateEntityVisibility = null;
+        this.uniItemsHook = null;
     }
 
     @Override
@@ -192,6 +207,16 @@ public class CratesPlugin extends NightPlugin {
     @NotNull
     public CrateLogger getCrateLogger() {
         return this.crateLogger;
+    }
+
+    @NotNull
+    public UniItemsHook getUniItemsHook() {
+        return this.uniItemsHook;
+    }
+
+    @NotNull
+    public PrivateEntityVisibility getPrivateEntityVisibility() {
+        return this.privateEntityVisibility;
     }
 
     @NotNull

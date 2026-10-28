@@ -10,7 +10,7 @@ import su.nightexpress.nightcore.util.random.Rnd;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.IntStream;
+import java.util.Objects;
 
 public abstract class AbstractSpinner implements Spinner {
 
@@ -157,11 +157,11 @@ public abstract class AbstractSpinner implements Spinner {
             if (this.isOutOfBounds(slot)) continue;
 
             if (index == 0) {
-                this.inventory.setItem(slot, item);
+                this.setItemIfChanged(slot, item);
             }
             else {
                 int previousSlot = slots[index - 1];
-                this.inventory.setItem(slot, this.inventory.getItem(previousSlot));
+                this.setItemIfChanged(slot, this.inventory.getItem(previousSlot));
             }
         }
     }
@@ -172,7 +172,7 @@ public abstract class AbstractSpinner implements Spinner {
 
             ItemStack item = this.createItem(slot);
 
-            this.inventory.setItem(slot, item);
+            this.setItemIfChanged(slot, item);
         }
     }
 
@@ -182,25 +182,34 @@ public abstract class AbstractSpinner implements Spinner {
         for (int slot : this.slots) {
             if (this.isOutOfBounds(slot)) continue;
 
-            this.inventory.setItem(slot, item);
+            this.setItemIfChanged(slot, item);
         }
     }
 
     protected void spinRandom() {
-        List<Integer> slots = new ArrayList<>(IntStream.of(this.slots).boxed().toList());
-        int roll = Rnd.get(slots.size() + 1);
+        int[] slots = this.slots.clone();
+        int remaining = slots.length;
+        int roll = Rnd.get(remaining + 1);
         if (roll <= 0) return;
 
-        while (roll > 0 && !slots.isEmpty()) {
-            int slot = slots.remove(Rnd.get(slots.size()));
+        while (roll > 0 && remaining > 0) {
+            int index = Rnd.get(remaining);
+            int slot = slots[index];
+            slots[index] = slots[--remaining];
 
             if (!this.isOutOfBounds(slot)) {
                 ItemStack item = this.createItem(slot);
-                this.inventory.setItem(slot, item);
+                this.setItemIfChanged(slot, item);
             }
 
             roll--;
         }
+    }
+
+    private void setItemIfChanged(int slot, ItemStack item) {
+        if (Objects.equals(this.inventory.getItem(slot), item)) return;
+
+        this.inventory.setItem(slot, item);
     }
 
     @NotNull

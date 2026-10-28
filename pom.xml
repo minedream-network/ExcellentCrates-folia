@@ -11,6 +11,12 @@
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
+        <server.api.groupId>org.spigotmc</server.api.groupId>
+        <server.api.artifactId>spigot-api</server.api.artifactId>
+        <server.api.version>1.21.10-R0.1-SNAPSHOT</server.api.version>
+        <nightcore.version>2.16.3</nightcore.version>
+        <uniitems.version>2.7.1</uniitems.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -51,20 +57,35 @@
             <id>codemc-repo</id>
             <url>https://repo.codemc.io/repository/maven-public/</url>
         </repository>
+
+        <repository>
+            <id>canvasmc</id>
+            <url>https://maven.canvasmc.io/public</url>
+        </repository>
+
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+
+        <repository>
+            <id>mojang</id>
+            <url>https://libraries.minecraft.net/</url>
+        </repository>
     </repositories>
 
     <dependencies>
         <dependency>
-            <groupId>org.spigotmc</groupId>
-            <artifactId>spigot-api</artifactId>
-            <version>1.21.10-R0.1-SNAPSHOT</version>
+            <groupId>${server.api.groupId}</groupId>
+            <artifactId>${server.api.artifactId}</artifactId>
+            <version>${server.api.version}</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>su.nightexpress.nightcore</groupId>
             <artifactId>main</artifactId>
-            <version>2.15.1</version>
+            <version>${nightcore.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -89,6 +110,19 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>io.github.projectunified</groupId>
+            <artifactId>uni-item-all</artifactId>
+            <version>${uniitems.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.12.2</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -99,6 +133,50 @@
             </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>io.github.projectunified:*</include>
+                                </includes>
+                            </artifactSet>
+                            <relocations>
+                                <relocation>
+                                    <pattern>io.github.projectunified.uniitem</pattern>
+                                    <shadedPattern>su.nightexpress.excellentcrates.libs.uniitem</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
@@ -114,5 +192,16 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>canvas-26.2</id>
+            <properties>
+                <server.api.groupId>io.canvasmc.canvas</server.api.groupId>
+                <server.api.artifactId>canvas-api</server.api.artifactId>
+                <server.api.version>26.2.build.941-stable</server.api.version>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

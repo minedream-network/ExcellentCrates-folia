@@ -65,10 +65,31 @@ public class SpinnerData implements Writeable {
 
         int spinDelay = config.getInt(path + ".SpinDelay");
         List<SpinStep> spinSteps = Lists.modify(config.getStringList(path + ".Spins"), SpinStep::deserialize);
+        validateSpinSteps(config, path, spinSteps);
 
         NightSound sound = config.readSound(path + ".Sound");
 
         return new SpinnerData(spinnerId, mode, slots, spinDelay, spinSteps, sound);
+    }
+
+    private static void validateSpinSteps(@NotNull FileConfig config, @NotNull String path, @NotNull List<SpinStep> spinSteps) {
+        if (spinSteps.isEmpty()) {
+            throw invalidSpinSteps(config, path, "must contain at least one step");
+        }
+
+        for (SpinStep step : spinSteps) {
+            if (step.getSpinsAmount() <= 0) {
+                throw invalidSpinSteps(config, path, "step amount must be greater than zero");
+            }
+            if (step.getTickInterval() < 1) {
+                throw invalidSpinSteps(config, path, "step interval must be at least one tick");
+            }
+        }
+    }
+
+    @NotNull
+    private static IllegalArgumentException invalidSpinSteps(@NotNull FileConfig config, @NotNull String path, @NotNull String reason) {
+        return new IllegalArgumentException("Invalid spinner steps at '" + config.getFile().getPath() + "' -> '" + path + ".Spins': " + reason + ".");
     }
 
     @Override

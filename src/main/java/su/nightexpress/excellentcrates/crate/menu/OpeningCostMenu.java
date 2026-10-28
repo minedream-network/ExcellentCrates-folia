@@ -14,10 +14,10 @@ import su.nightexpress.excellentcrates.crate.CrateManager;
 import su.nightexpress.excellentcrates.crate.cost.Cost;
 import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.CrateSource;
+import su.nightexpress.excellentcrates.hooks.UniItemsMenu;
 import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.ui.menu.MenuViewer;
-import su.nightexpress.nightcore.ui.menu.data.ConfigBased;
 import su.nightexpress.nightcore.ui.menu.data.MenuLoader;
 import su.nightexpress.nightcore.ui.menu.type.LinkedMenu;
 import su.nightexpress.nightcore.util.bukkit.NightItem;
@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 import static su.nightexpress.excellentcrates.Placeholders.*;
 import static su.nightexpress.nightcore.util.text.night.wrapper.TagWrappers.*;
 
-public class OpeningCostMenu extends LinkedMenu<CratesPlugin, CrateSource> implements ConfigBased {
+public class OpeningCostMenu extends LinkedMenu<CratesPlugin, CrateSource> implements UniItemsMenu {
 
     private final CrateManager manager;
     private final Map<Integer, int[]> slotsByCostsAmount;

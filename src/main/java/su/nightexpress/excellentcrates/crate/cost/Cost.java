@@ -91,12 +91,35 @@ public class Cost implements Writeable {
         return this.entries.stream().allMatch(entry -> entry.hasEnough(player));
     }
 
-    public void takeAll(@NotNull Player player) {
-        this.entries.forEach(entry -> entry.take(player));
+    public boolean takeAll(@NotNull Player player) {
+        List<CostEntry> taken = new ArrayList<>(this.entries.size());
+
+        try {
+            for (CostEntry entry : this.entries) {
+                if (!entry.hasEnough(player)) {
+                    this.refundTaken(player, taken);
+                    return false;
+                }
+
+                entry.take(player);
+                taken.add(entry);
+            }
+            return true;
+        }
+        catch (RuntimeException exception) {
+            this.refundTaken(player, taken);
+            throw exception;
+        }
     }
 
     public void refundAll(@NotNull Player player) {
         this.entries.forEach(entry -> entry.refund(player));
+    }
+
+    private void refundTaken(@NotNull Player player, @NotNull List<CostEntry> taken) {
+        for (int index = taken.size() - 1; index >= 0; index--) {
+            taken.get(index).refund(player);
+        }
     }
 
     public int countMaxOpenings(@NotNull Player player) {

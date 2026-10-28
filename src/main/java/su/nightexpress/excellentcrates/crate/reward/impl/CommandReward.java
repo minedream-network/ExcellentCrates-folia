@@ -84,11 +84,13 @@ public class CommandReward extends AbstractReward {
 
     @Override
     public void giveContent(@NotNull Player player) {
-        Replacer replacer = this.createContentReplacer(player).replace(Placeholders.forPlayerWithPAPI(player));
+        CrateUtils.dispatchCommandsOrdered(this.plugin, player, this.renderCommands(player));
+    }
 
-        this.getCommands().forEach(command -> {
-            Players.dispatchCommand(player, replacer.apply(command));
-        });
+    @NotNull
+    public List<String> renderCommands(@NotNull Player player) {
+        Replacer replacer = this.createContentReplacer(player).replace(Placeholders.forPlayerWithPAPI(player));
+        return replacer.apply(this.getCommands());
     }
 
     @Override

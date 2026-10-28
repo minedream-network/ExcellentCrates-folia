@@ -1,5 +1,6 @@
 package su.nightexpress.excellentcrates.opening.inventory.spinner.provider;
 
+import org.bukkit.Material;
 import org.jetbrains.annotations.NotNull;
 import su.nightexpress.excellentcrates.CratesPlugin;
 import su.nightexpress.excellentcrates.opening.inventory.InventoryOpening;
@@ -24,11 +25,13 @@ public class AnimationProvider implements SpinnerProvider, Writeable {
     }
 
     @NotNull
-    public static AnimationProvider read(@NotNull FileConfig config, @NotNull String path) {
+    public static AnimationProvider read(@NotNull CratesPlugin plugin, @NotNull FileConfig config, @NotNull String path) {
         Map<String, WeightedItem<NightItem>> itemsMap = new HashMap<>();
         config.getSection(path + ".Items").forEach(sId -> {
             double weight = config.getDouble(path + ".Items." + sId + ".Chance", 100D);
-            NightItem item = config.getCosmeticItem(path + ".Items." + sId);
+            String itemPath = path + ".Items." + sId;
+            NightItem item = plugin.getUniItemsHook().readMaterial(config, itemPath, Material.BARRIER,
+                () -> config.getCosmeticItem(itemPath));
             itemsMap.put(sId.toLowerCase(), new WeightedItem<>(item, weight));
         });
 

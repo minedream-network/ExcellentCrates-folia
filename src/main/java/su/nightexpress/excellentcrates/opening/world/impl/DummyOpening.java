@@ -48,9 +48,8 @@ public class DummyOpening extends AbstractOpening {
     }
 
     private void roll() {
+        this.addReward(this.crate.rollRewardReserved(this.player));
         this.setRefundable(false);
-
-        this.addReward(this.crate.rollReward(this.player));
 
         this.rolled = true;
     }

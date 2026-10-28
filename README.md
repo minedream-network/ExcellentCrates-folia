@@ -46,15 +46,28 @@
 - [**PlaceholderAPI**](https://nightexpressdev.com/excellentcrates/hooks/placeholder_api/) Support!
 
 ## System Requirements
-- Server Software: [**Spigot**](https://www.spigotmc.org/link-forums/88/) or [**Paper**](https://papermc.io/downloads/paper)
-- Server Version: <span style="color:red">**1.21.8**</span> or above
-- Java Version: [**21**](https://adoptium.net/temurin/releases) or above
+- Server Software: [**Spigot**](https://www.spigotmc.org/link-forums/88/), [**Paper**](https://papermc.io/downloads/paper), or Canvas/Folia
+- Server Version: **1.21.10+** on the native line, or **26.2** on Canvas/Folia
+- Java Version: [**21**](https://adoptium.net/temurin/releases) for the native line; **25** for Canvas/Folia 26.2
 - Dependencies:
-    - [**nightcore**](https://nightexpressdev.com/nightcore/) - Plugin engine.
+    - [**nightcore 2.16.3+**](https://nightexpressdev.com/nightcore/) - Plugin engine.
 - Optional Plugins:
     - [**PacketEvents**](https://spigotmc.org/resources/80279/) or [**ProtocolLib**](https://ci.dmulloy2.net/job/ProtocolLib/) - Crate holograms.
-- Folia Supported: <span style="color:red">**No**</span>
+- Folia Supported: **Yes**
 - Forge Supported: <span style="color:red">**No**</span>
+
+### Build targets
+
+- Native Spigot/Paper (Java 21 bytecode): `mvn clean verify`
+- Canvas/Folia 26.2 (run Maven with JDK 25, still emits Java 21 bytecode): `mvn "-Pcanvas-26.2" clean verify` on PowerShell, or `mvn -Pcanvas-26.2 clean verify` on other shells
+
+Deploy `ExcellentCrates-6.6.1.jar` together with `nightcore-2.16.3.jar` (or newer) and perform a full server restart. The plugin selects the world-aware Canvas/Paper entity-ID API at runtime while retaining the native Spigot/NightCore path.
+
+### UniItems menu icons
+
+Player-facing menu items accept UniItems provider keys directly in the existing `Material` setting. For example: `Material: 'nexo:next_page'`, `Material: 'itemsadder:namespace:item'`, or `Material: 'mmoitems:MISCELLANEOUS:MENU_ICON'`.
+
+The provider item supplies the icon/model while the configured menu name, lore, slots, and click action remain unchanged. An invalid or unavailable provider key falls back to the menu's vanilla default (or `BARRIER` where the config replaced that default). This applies to preview, milestones, selectable, opening cost/amount, reroll, and inventory-animation menus; editor menus are unchanged.
 
 ## Links
 - [SpigotMC](https://spigotmc.org/resources/48732/)

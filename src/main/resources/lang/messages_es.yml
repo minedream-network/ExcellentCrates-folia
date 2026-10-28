@@ -26,7 +26,7 @@ Command:
     Desc: Gestiona las llaves del jugador.
     Usage: '[help]'
     Give:
-      Usage: <jugador> <llave> <cantidad> [-s] [-nosave]
+      Usage: <jugador> <llave> <cantidad> [cantidad-máxima] [-s] [-nosave]
       Desc: Da una llave a un jugador.
       Done: <lgray>Se dió <lyellow>x%amount%</lyellow> llave(s <lyellow>%key_name%</lyellow> a <lyellow>%player_name%</lyellow>.</lgray>
       Notify: <lgray>Recibiste <lyellow>x%amount%</lyellow> de <lyellow>%key_name%</lyellow>!</lgray>

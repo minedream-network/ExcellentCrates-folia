@@ -12,6 +12,7 @@ import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.jetbrains.annotations.NotNull;
@@ -19,6 +20,7 @@ import org.jetbrains.annotations.Nullable;
 import su.nightexpress.excellentcrates.CratesPlugin;
 import su.nightexpress.excellentcrates.api.opening.Opening;
 import su.nightexpress.excellentcrates.opening.inventory.InventoryOpening;
+import su.nightexpress.excellentcrates.util.CrateUtils;
 import su.nightexpress.nightcore.manager.AbstractListener;
 
 public class OpeningListener extends AbstractListener<CratesPlugin> {
@@ -30,15 +32,26 @@ public class OpeningListener extends AbstractListener<CratesPlugin> {
         this.manager = manager;
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        this.manager.recoverPendingRefund(event.getPlayer());
+        CrateUtils.resumeCommandQueue(this.plugin, event.getPlayer());
+    }
+
     @EventHandler(priority = EventPriority.NORMAL)
     public void onQuit(PlayerQuitEvent event) {
-        Opening opening = this.manager.getOpening(event.getPlayer());
-        if (opening instanceof AbstractOpening abstractOpening && abstractOpening.isAwaitingRewardConfirmation()) {
-            abstractOpening.confirmRewards();
-            return;
-        }
+        try {
+            Opening opening = this.manager.getOpening(event.getPlayer());
+            if (opening instanceof AbstractOpening abstractOpening && abstractOpening.isAwaitingRewardConfirmation()) {
+                abstractOpening.confirmRewards();
+                return;
+            }
 
-        this.manager.stopOpening(event.getPlayer());
+            this.manager.stopOpening(event.getPlayer());
+        }
+        finally {
+            CrateUtils.pauseCommandQueue(this.plugin, event.getPlayer());
+        }
     }
 
     @EventHandler(priority = EventPriority.NORMAL)

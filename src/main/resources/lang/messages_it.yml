@@ -25,7 +25,7 @@ Command:
     Desc: Maneggia le chiavi dei giocatori.
     Usage: '[help]'
     Give:
-      Usage: <player> <key> <amount> [-s]
+      Usage: <player> <key> <amount> [max-amount] [-s]
       Desc: Dai chiavi al giocatore.
       Done: '#d4d9d8È/sono stata/e data/e #fdf35ex%amount%#d4d9d8 chave/i di #fdf35e%key_name%#d4d9d8 a #fdf35e%player_name%#d4d9d8.'
       Notify: '#d4d9d8Hai ricevuto #fdf35ex%amount%#d4d9d8 chavi di #fdf35e%key_name%#d4d9d8!'

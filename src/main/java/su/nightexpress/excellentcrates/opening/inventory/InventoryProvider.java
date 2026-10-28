@@ -1,5 +1,6 @@
 package su.nightexpress.excellentcrates.opening.inventory;
 
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.MenuType;
@@ -76,8 +77,10 @@ public class InventoryProvider extends AbstractProvider {
         this.defaultItems.clear();
 
         config.getSection("Content.Default").forEach(sId -> {
-            NightItem item = config.getCosmeticItem("Content.Default." + sId + ".Item");
-            int[] slots = config.getIntArray("Content.Default." + sId + ".Slots");
+            String itemPath = "Content.Default." + sId;
+            NightItem item = this.plugin.getUniItemsHook().readMaterial(config, itemPath + ".Item", Material.BARRIER,
+                () -> config.getCosmeticItem(itemPath + ".Item"));
+            int[] slots = config.getIntArray(itemPath + ".Slots");
 
             this.defaultItems.put(sId.toLowerCase(), item.toMenuItem().setSlots(slots).build());
         });
@@ -107,6 +110,10 @@ public class InventoryProvider extends AbstractProvider {
                 SpinnerData data = SpinnerData.read(config, typedConfigsPath + "." + sId);
                 if (data == null) return;
 
+                if (type == SpinnerType.REWARD && !this.hasWinSlot(data)) {
+                    throw new IllegalArgumentException("Reward spinner '" + sId + "' in '" + config.getFile().getPath() + "' must contain at least one configured win slot.");
+                }
+
                 String spinnerId = data.getSpinnerId();
                 String providerIdPath = typedProvidersPath + "." + spinnerId;
                 if (!config.contains(providerIdPath)) {
@@ -116,13 +123,22 @@ public class InventoryProvider extends AbstractProvider {
 
                 SpinnerProvider provider = switch (type) {
                     case REWARD -> RewardProvider.read(config, providerIdPath);
-                    case ANIMATION -> AnimationProvider.read(config, providerIdPath);
+                    case ANIMATION -> AnimationProvider.read(this.plugin, config, providerIdPath);
                 };
 
                 SpinnerHolder holder = new SpinnerHolder(sId, type, data, provider);
                 this.addSpinner(holder);
             });
         }
+    }
+
+    private boolean hasWinSlot(@NotNull SpinnerData data) {
+        for (int slot : data.getSlots()) {
+            for (int winSlot : this.winSlots) {
+                if (slot == winSlot) return true;
+            }
+        }
+        return false;
     }
 
     @Override

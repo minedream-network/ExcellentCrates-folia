@@ -25,16 +25,15 @@ import su.nightexpress.excellentcrates.crate.cost.entry.impl.KeyCostEntry;
 import su.nightexpress.excellentcrates.crate.effect.CrateEffect;
 import su.nightexpress.excellentcrates.crate.effect.EffectId;
 import su.nightexpress.excellentcrates.crate.impl.*;
-import su.nightexpress.excellentcrates.crate.limit.LimitValues;
 import su.nightexpress.excellentcrates.crate.listener.CrateListener;
 import su.nightexpress.excellentcrates.crate.menu.MilestonesMenu;
 import su.nightexpress.excellentcrates.crate.menu.OpeningAmountMenu;
 import su.nightexpress.excellentcrates.crate.menu.OpeningCostMenu;
 import su.nightexpress.excellentcrates.crate.menu.PreviewMenu;
 import su.nightexpress.excellentcrates.crate.reward.RewardDialogs;
+import su.nightexpress.excellentcrates.crate.reward.impl.CommandReward;
 import su.nightexpress.excellentcrates.data.crate.GlobalCrateData;
 import su.nightexpress.excellentcrates.data.crate.UserCrateData;
-import su.nightexpress.excellentcrates.data.reward.RewardData;
 import su.nightexpress.excellentcrates.dialog.DialogRegistry;
 import su.nightexpress.excellentcrates.dialog.cost.CostCreationDialog;
 import su.nightexpress.excellentcrates.dialog.cost.CostEntryCreationDialog;
@@ -49,6 +48,7 @@ import su.nightexpress.excellentcrates.util.InteractType;
 import su.nightexpress.excellentcrates.util.ItemHelper;
 import su.nightexpress.excellentcrates.util.pos.WorldPos;
 import su.nightexpress.nightcore.config.FileConfig;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.core.config.CoreLang;
 import su.nightexpress.nightcore.locale.message.LangMessage;
 import su.nightexpress.nightcore.locale.message.MessageData;
@@ -67,11 +67,16 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CrateManager extends AbstractManager<CratesPlugin> {
 
-    private static final long EDITOR_SAVE_DELAY_TICKS = 20L;
+    private static final long EDITOR_SAVE_DELAY_TICKS    = 20L;
+    private static final int  MASS_OPENINGS_PER_TICK      = 1;
+    private static final int  BROADCASTS_PER_PLAYER_TICK = 8;
+    private static final boolean REGIONIZED_SERVER = isRegionizedServer();
 
     private final DialogRegistry dialogs;
 
@@ -80,7 +85,12 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     private final Map<WorldPos, Crate>     crateByPosMap;
     private final Map<String, PreviewMenu> previewByIdMap;
     private final Map<UUID, Long>          previewCooldown;
-    private final AtomicBoolean            saveQueued;
+    private final Map<UUID, MassOpenJob>              massOpenJobs;
+    private final Set<UUID>                           pendingMassOpenings;
+    private final Map<UUID, Queue<RewardBroadcast>>    rewardBroadcasts;
+    private final Set<UUID>                           pendingRewardBroadcasts;
+    private final AtomicBoolean                       saveQueued;
+    private final FoliaScheduler                      scheduler;
 
     private OpeningCostMenu   costMenu;
     private OpeningAmountMenu amountMenu;
@@ -95,7 +105,12 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         this.crateByPosMap = new HashMap<>();
         this.previewByIdMap = new HashMap<>();
         this.previewCooldown = new HashMap<>();
+        this.massOpenJobs = new ConcurrentHashMap<>();
+        this.pendingMassOpenings = ConcurrentHashMap.newKeySet();
+        this.rewardBroadcasts = new ConcurrentHashMap<>();
+        this.pendingRewardBroadcasts = ConcurrentHashMap.newKeySet();
         this.saveQueued = new AtomicBoolean();
+        this.scheduler = new FoliaScheduler(plugin);
     }
 
     @Override
@@ -111,7 +126,8 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
         this.addListener(new CrateListener(this.plugin, this));
 
-        this.addAsyncTask(this::playCrateEffects, 1L);
+        this.addTask(this::playCrateEffects, 1L);
+        this.addTask(this::tickMassOpenings, 1L);
         this.addAsyncTask(this::saveCrates, Config.CRATE_SAVE_INTERVAL.get());
     }
 
@@ -123,6 +139,10 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
         this.previewByIdMap.values().forEach(PreviewMenu::clear);
         this.previewByIdMap.clear();
+        this.massOpenJobs.clear();
+        this.pendingMassOpenings.clear();
+        this.rewardBroadcasts.clear();
+        this.pendingRewardBroadcasts.clear();
         this.crateByIdMap.clear();
         this.crateByPosMap.clear();
         this.rarityByIdMap.clear();
@@ -558,16 +578,76 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     public void multiOpenCrate(@NotNull Player player, @NotNull CrateSource source, @NotNull OpenOptions options, @Nullable Cost cost, int amount) {
         int massLimit = Config.MASS_OPENING_LIMIT.get();
         int openings = Math.clamp(amount, 1, massLimit);
+        options.with(OpenOptions.Option.IGNORE_ANIMATION);
 
-        if (openings > 1) {
-            options.with(OpenOptions.Option.IGNORE_ANIMATION);
+        if (openings <= 1) {
+            this.openCrate(player, source, options, cost);
+            return;
         }
 
-        for (int spent = 0; spent < openings; spent++) {
-            if (!this.openCrate(player, source, options, cost)) {
-                break;
+        UUID playerId = player.getUniqueId();
+        MassOpenJob job = new MassOpenJob(player, source, options, cost, openings);
+        if (this.massOpenJobs.putIfAbsent(playerId, job) != null) {
+            Lang.CRATE_OPEN_ERROR_ALREADY.message().send(player);
+        }
+    }
+
+    private void tickMassOpenings() {
+        this.massOpenJobs.forEach((playerId, job) -> {
+            Player player = job.player();
+            if (!this.pendingMassOpenings.add(playerId)) return;
+
+            var task = this.scheduler.runTask(player, () -> {
+                try {
+                    if (this.massOpenJobs.get(playerId) == job) {
+                        this.runMassOpenings(job);
+                    }
+                }
+                finally {
+                    this.pendingMassOpenings.remove(playerId);
+                }
+            });
+            if (task == null) {
+                this.pendingMassOpenings.remove(playerId);
+                this.massOpenJobs.remove(playerId, job);
             }
+        });
+    }
+
+    private void runMassOpenings(@NotNull MassOpenJob job) {
+        Player player = job.player();
+        UUID playerId = player.getUniqueId();
+
+        if (!player.isOnline()) {
+            this.massOpenJobs.remove(playerId, job);
+            return;
         }
+
+        for (int count = 0; count < MASS_OPENINGS_PER_TICK && job.remaining() > 0; count++) {
+            if (!this.plugin.getOpeningManager().isOpeningAvailable(player)) return;
+
+            CrateSource source = this.resolveMassSource(player, job.source());
+            if (source == null || !this.openCrate(player, source, job.options(), job.cost())) {
+                this.massOpenJobs.remove(playerId, job);
+                return;
+            }
+
+            job.decrement();
+        }
+
+        if (job.remaining() <= 0) {
+            this.massOpenJobs.remove(playerId, job);
+        }
+    }
+
+    @Nullable
+    private CrateSource resolveMassSource(@NotNull Player player, @NotNull CrateSource original) {
+        if (!original.hasItem()) return original;
+
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (this.getCrateByItem(item) != original.getCrate()) return null;
+
+        return new CrateSource(original.getCrate(), item, original.getBlockPos());
     }
 
     private boolean isAlreadyOpening(@NotNull Player player) {
@@ -604,74 +684,114 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         CrateUser user = plugin.getUserManager().getOrFetch(player);
         UserCrateData userCrate = user.getCrateData(crate);
         Cost realCost = options.has(OpenOptions.Option.IGNORE_COST) ? null : cost;
+        Opening opening = null;
+        boolean reserved = false;
+        boolean costTaken = false;
+        boolean itemTaken = false;
 
         if (this.isAlreadyOpening(player)) {
             return false;
         }
 
-        if (!this.testRestrictions(player, crate)) {
-            this.pushback(player, source);
+        if (!this.plugin.getOpeningManager().reserveOpening(player)) {
+            Lang.CRATE_OPEN_ERROR_ALREADY.message().send(player);
             return false;
         }
+        reserved = true;
 
-        // Ensure the inventory item used to open a crate does still exist.
-        if (source.getItem() != null && source.getItem().getAmount() <= 0) {
-            return false;
-        }
+        try {
+            if (!this.testRestrictions(player, crate)) {
+                this.pushback(player, source);
+                return false;
+            }
 
-        if (!options.has(OpenOptions.Option.IGNORE_PERMISSION) && !crate.hasPermission(player)) {
-            CoreLang.ERROR_NO_PERMISSION.withPrefix(this.plugin).send(player);
-            this.pushback(player, source);
-            return false;
-        }
+            // Ensure the inventory item used to open a crate does still exist.
+            if (source.getItem() != null && source.getItem().getAmount() <= 0) {
+                return false;
+            }
 
-        if (!options.has(OpenOptions.Option.IGNORE_COOLDOWN) && crate.isOpeningCooldownEnabled() && userCrate.isOnCooldown()) {
-            int openLimit = crate.getOpeningLimitAmount();
-            int openStreak = userCrate.queryOpeningStreak();
-            int remaining = openLimit - openStreak;
+            if (!options.has(OpenOptions.Option.IGNORE_PERMISSION) && !crate.hasPermission(player)) {
+                CoreLang.ERROR_NO_PERMISSION.withPrefix(this.plugin).send(player);
+                this.pushback(player, source);
+                return false;
+            }
 
-            if (remaining <= 0) {
-                (userCrate.isCooldownPermanent() ? Lang.CRATE_OPEN_ERROR_COOLDOWN_ONE_TIMED : Lang.CRATE_OPEN_ERROR_COOLDOWN_TEMPORARY).message().send(player, replacer -> replacer
-                    .replace(Placeholders.GENERIC_TIME, TimeFormats.formatDuration(userCrate.getCooldownTimestamp(), TimeFormatType.LITERAL))
+            if (!options.has(OpenOptions.Option.IGNORE_COOLDOWN) && crate.isOpeningCooldownEnabled() && userCrate.isOnCooldown()) {
+                int openLimit = crate.getOpeningLimitAmount();
+                int openStreak = userCrate.queryOpeningStreak();
+                int remaining = openLimit - openStreak;
+
+                if (remaining <= 0) {
+                    (userCrate.isCooldownPermanent() ? Lang.CRATE_OPEN_ERROR_COOLDOWN_ONE_TIMED : Lang.CRATE_OPEN_ERROR_COOLDOWN_TEMPORARY).message().send(player, replacer -> replacer
+                        .replace(Placeholders.GENERIC_TIME, TimeFormats.formatDuration(userCrate.getCooldownTimestamp(), TimeFormatType.LITERAL))
+                        .replace(crate.replacePlaceholders())
+                    );
+                    this.pushback(player, source);
+                    return false;
+                }
+            }
+
+            if (realCost != null && !realCost.canAfford(player)) {
+                Lang.CRATE_OPEN_TOO_EXPENSIVE.message().send(player, replacer -> replacer
                     .replace(crate.replacePlaceholders())
+                    .replace(Placeholders.GENERIC_COSTS, () -> realCost.formatInline(", ")) // TODO Delimiter lang
                 );
                 this.pushback(player, source);
                 return false;
             }
-        }
 
-        if (realCost != null && !realCost.canAfford(player)) {
-            Lang.CRATE_OPEN_TOO_EXPENSIVE.message().send(player, replacer -> replacer
-                .replace(crate.replacePlaceholders())
-                .replace(Placeholders.GENERIC_COSTS, () -> realCost.formatInline(", ")) // TODO Delimiter lang
-            );
-            this.pushback(player, source);
+            CrateOpenEvent openEvent = new CrateOpenEvent(crate, player);
+            plugin.getPluginManager().callEvent(openEvent);
+            if (openEvent.isCancelled()) {
+                this.pushback(player, source);
+                return false;
+            }
+
+            player.closeInventory(); // Cheat clients must die
+
+            opening = this.plugin.getOpeningManager().createOpening(player, source, realCost);
+
+            if (realCost != null) {
+                if (!realCost.takeAll(player)) {
+                    this.plugin.getDataManager().releaseRewards(player, opening.getRewards());
+                    Lang.CRATE_OPEN_TOO_EXPENSIVE.message().send(player, replacer -> replacer
+                        .replace(crate.replacePlaceholders())
+                        .replace(Placeholders.GENERIC_COSTS, () -> realCost.formatInline(", "))
+                    );
+                    return false;
+                }
+                costTaken = true;
+            }
+
+            ItemStack item = source.getItem();
+            if (item != null) {
+                item.setAmount(item.getAmount() - 1);
+                itemTaken = true;
+            }
+
+            reserved = false; // startOpening consumes the reservation and owns refund/finalization from here.
+            return this.plugin.getOpeningManager().startOpening(player, opening, options.has(OpenOptions.Option.IGNORE_ANIMATION));
+        }
+        catch (RuntimeException exception) {
+            if (opening != null) {
+                this.plugin.getDataManager().releaseRewards(player, opening.getRewards());
+            }
+            if (costTaken && realCost != null) {
+                realCost.refundAll(player);
+            }
+            if (itemTaken) {
+                Players.addItem(player, crate.getItemStack());
+            }
+
+            this.plugin.error("Could not prepare crate opening for '" + player.getName() + "'.");
+            exception.printStackTrace();
             return false;
         }
-
-        CrateOpenEvent openEvent = new CrateOpenEvent(crate, player);
-        plugin.getPluginManager().callEvent(openEvent);
-        if (openEvent.isCancelled()) {
-            this.pushback(player, source);
-            return false;
+        finally {
+            if (reserved) {
+                this.plugin.getOpeningManager().releaseOpeningReservation(player);
+            }
         }
-
-        player.closeInventory(); // Cheat clients must die
-
-        Opening opening = this.plugin.getOpeningManager().createOpening(player, source, realCost);
-
-        this.plugin.getOpeningManager().startOpening(player, opening, options.has(OpenOptions.Option.IGNORE_ANIMATION));
-
-        if (realCost != null) {
-            realCost.takeAll(player);
-        }
-
-        ItemStack item = source.getItem();
-        if (item != null) {
-            item.setAmount(item.getAmount() - 1);
-        }
-
-        return true;
     }
 
     private void pushback(@NotNull Player player, @NotNull CrateSource source) {
@@ -704,7 +824,33 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     }
 
     public void giveReward(@NotNull Player player, @NotNull Reward reward) {
-        reward.giveContent(player);
+        if (!this.plugin.getDataManager().commitReward(player, reward)) return;
+
+        this.giveRewardContent(player, reward);
+    }
+
+    public void giveReservedReward(@NotNull Player player, @NotNull Reward reward) {
+        this.giveReservedReward(player, reward, null);
+    }
+
+    public void giveReservedReward(@NotNull Player player, @NotNull Reward reward, @Nullable List<String> commandQueue) {
+        if (!this.plugin.getDataManager().commitReservedReward(player, reward)
+            && !this.plugin.getDataManager().commitReward(player, reward)) return;
+
+        this.giveRewardContent(player, reward, commandQueue);
+    }
+
+    private void giveRewardContent(@NotNull Player player, @NotNull Reward reward) {
+        this.giveRewardContent(player, reward, null);
+    }
+
+    private void giveRewardContent(@NotNull Player player, @NotNull Reward reward, @Nullable List<String> commandQueue) {
+        if (commandQueue != null && reward instanceof CommandReward commandReward) {
+            commandQueue.addAll(commandReward.renderCommands(player));
+        }
+        else {
+            reward.giveContent(player);
+        }
 
         Crate crate = reward.getCrate();
         GlobalCrateData globalData = this.plugin.getDataManager().getCrateDataOrCreate(crate);
@@ -713,29 +859,103 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         globalData.setDirty(true);
 
         if (reward.isBroadcast()) {
+            LangMessage message = Lang.CRATE_OPEN_REWARD_BROADCAST.message();
+            if (!Config.REWARD_BROADCAST_SOUND_ENABLED.get()) {
+                message = this.withoutSound(message);
+            }
+            LangMessage broadcastMessage = this.renderRewardBroadcast(player, crate, reward, message);
+
             for (Player target : this.plugin.getServer().getOnlinePlayers()) {
-                if (!this.plugin.getRewardBroadcastFilterRegistry().shouldReceive(target, player, reward)) {
-                    continue;
-                }
-                this.sendRewardBroadcast(target, player, crate, reward);
+                this.queueRewardBroadcast(target, new RewardBroadcast(player, reward, broadcastMessage));
             }
         }
 
-        this.addRollCount(player, reward);
         this.plugin.getCrateLogger().logReward(player, reward);
 
         CrateObtainRewardEvent event = new CrateObtainRewardEvent(reward, player);
         this.plugin.getPluginManager().callEvent(event);
     }
 
-    private void sendRewardBroadcast(@NotNull Player target, @NotNull Player opener, @NotNull Crate crate, @NotNull Reward reward) {
-        LangMessage message = Lang.CRATE_OPEN_REWARD_BROADCAST.message();
+    private void queueRewardBroadcast(@NotNull Player target, @NotNull RewardBroadcast broadcast) {
+        UUID targetId = target.getUniqueId();
+        Queue<RewardBroadcast> queue = this.rewardBroadcasts.computeIfAbsent(targetId, ignored -> new ConcurrentLinkedQueue<>());
+        queue.add(broadcast);
+        this.scheduleRewardBroadcasts(target, targetId, queue);
+    }
 
-        if (!Config.REWARD_BROADCAST_SOUND_ENABLED.get()) {
-            message = this.withoutSound(message);
+    private void scheduleRewardBroadcasts(@NotNull Player target,
+                                          @NotNull UUID targetId,
+                                          @NotNull Queue<RewardBroadcast> queue) {
+        if (!this.pendingRewardBroadcasts.add(targetId)) return;
+
+        var task = this.scheduler.runTask(target, () -> {
+            try {
+                for (int count = 0; count < BROADCASTS_PER_PLAYER_TICK; count++) {
+                    RewardBroadcast broadcast = queue.poll();
+                    if (broadcast == null) break;
+
+                    try {
+                        if (target.isOnline() && this.canReceiveRewardBroadcast(target, broadcast)) {
+                            broadcast.message().send(target);
+                        }
+                    }
+                    catch (RuntimeException exception) {
+                        this.plugin.error("Could not broadcast reward '" + broadcast.reward().getId() + "' to '" + target.getName() + "'.");
+                        exception.printStackTrace();
+                    }
+                }
+            }
+            finally {
+                this.pendingRewardBroadcasts.remove(targetId);
+                if (queue.isEmpty()) {
+                    this.rewardBroadcasts.compute(targetId, (ignored, current) -> current == queue && queue.isEmpty() ? null : current);
+                }
+                else {
+                    this.scheduleRewardBroadcasts(target, targetId, queue);
+                }
+            }
+        });
+
+        if (task == null) {
+            this.pendingRewardBroadcasts.remove(targetId);
+            this.rewardBroadcasts.remove(targetId, queue);
+        }
+    }
+
+    private boolean canReceiveRewardBroadcast(@NotNull Player target, @NotNull RewardBroadcast broadcast) {
+        var registry = this.plugin.getRewardBroadcastFilterRegistry();
+        if (!REGIONIZED_SERVER || target.getUniqueId().equals(broadcast.opener().getUniqueId())) {
+            return registry.shouldReceive(target, broadcast.opener(), broadcast.reward());
         }
 
-        message.send(target, replacer -> this.replaceRewardBroadcast(replacer, opener, crate, reward));
+        // shortcut: Legacy filters need two live Players; fail closed cross-region until a snapshot filter API exists.
+        return !registry.hasFilters();
+    }
+
+    private static boolean isRegionizedServer() {
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return true;
+        }
+        catch (ClassNotFoundException exception) {
+            return false;
+        }
+    }
+
+    @NotNull
+    private LangMessage renderRewardBroadcast(@NotNull Player opener,
+                                              @NotNull Crate crate,
+                                              @NotNull Reward reward,
+                                              @NotNull LangMessage message) {
+        MessageData data = this.getMessageData(message);
+        if (data == null) return message;
+
+        Replacer replacer = Replacer.create();
+        this.replaceRewardBroadcast(replacer, opener, crate, reward);
+
+        LangMessage rendered = LangMessage.createFromData(replacer.apply(message.getText()), data);
+        String prefix = this.getMessagePrefix(message);
+        return prefix != null && rendered instanceof ChatMessage chatMessage ? chatMessage.withPrefix(prefix) : rendered;
     }
 
     @NotNull
@@ -784,30 +1004,7 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     }
 
     public void addRollCount(@NotNull Player player, @NotNull Reward reward) {
-        LimitValues limits = reward.getLimits();
-        if (!limits.isEnabled()) return;
-
-        if (limits.hasGlobalCooldown() || limits.isGlobalAmountLimited()) {
-            RewardData globalData = this.plugin.getDataManager().getRewardLimitOrCreate(reward, null);
-            if (limits.hasGlobalCooldown()) {
-                globalData.setCooldownUntil(limits.generateGlobalCooldown());
-            }
-            if (limits.isGlobalAmountLimited()) {
-                globalData.addRoll(1);
-            }
-            globalData.setSaveRequired(true);
-        }
-
-        if (limits.hasPlayerCooldown() || limits.isPlayerAmountLimited()) {
-            RewardData playerData = this.plugin.getDataManager().getRewardLimitOrCreate(reward, player);
-            if (limits.hasPlayerCooldown()) {
-                playerData.setCooldownUntil(limits.generatePlayerCooldown());
-            }
-            if (limits.isPlayerAmountLimited()) {
-                playerData.addRoll(1);
-            }
-            playerData.setSaveRequired(true);
-        }
+        this.plugin.getDataManager().commitReward(player, reward);
     }
 
     public void setPreviewCooldown(@NotNull Player player) {
@@ -840,20 +1037,72 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
             CrateEffect effect = crate.getEffect();
             if (effect.isDummy()) return;
 
+            int step = effect.getStep();
+            if (step < 0) return;
+
             UniParticle particle = crate.getEffectParticle();
 
             crate.getBlockPositions().forEach(worldPos -> {
-                if (!worldPos.isChunkLoaded()) return;
-
                 Location location = worldPos.toLocation();
                 if (location == null) return;
 
-                CrateUtils.getPlayersForEffects(location).forEach(player -> {
-                    effect.playStep(location, particle, player);
-                });
+                CrateUtils.forEachPlayerInEffectRange(this.plugin, location, player -> effect.playStep(location, particle, step, player));
             });
         });
 
         CratesRegistries.getEffects().forEach(CrateEffect::addTickCount);
     }
+
+    private static final class MassOpenJob {
+
+        private final Player      player;
+        private final CrateSource source;
+        private final OpenOptions options;
+        private final Cost        cost;
+
+        private int remaining;
+
+        private MassOpenJob(@NotNull Player player,
+                            @NotNull CrateSource source,
+                            @NotNull OpenOptions options,
+                            @Nullable Cost cost,
+                            int remaining) {
+            this.player = player;
+            this.source = source;
+            this.options = options;
+            this.cost = cost;
+            this.remaining = remaining;
+        }
+
+        @NotNull
+        private Player player() {
+            return this.player;
+        }
+
+        @NotNull
+        private CrateSource source() {
+            return this.source;
+        }
+
+        @NotNull
+        private OpenOptions options() {
+            return this.options;
+        }
+
+        @Nullable
+        private Cost cost() {
+            return this.cost;
+        }
+
+        private int remaining() {
+            return this.remaining;
+        }
+
+        private void decrement() {
+            this.remaining--;
+            assert this.remaining >= 0 : "Mass opening remaining count became negative";
+        }
+    }
+
+    private record RewardBroadcast(@NotNull Player opener, @NotNull Reward reward, @NotNull LangMessage message) {}
 }

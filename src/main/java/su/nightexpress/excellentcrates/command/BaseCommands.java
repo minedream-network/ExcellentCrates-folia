@@ -22,9 +22,11 @@ import su.nightexpress.nightcore.commands.builder.LiteralNodeBuilder;
 import su.nightexpress.nightcore.commands.context.CommandContext;
 import su.nightexpress.nightcore.commands.context.ParsedArguments;
 import su.nightexpress.nightcore.core.config.CoreLang;
+import su.nightexpress.nightcore.bridge.paper.scheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.Lists;
 import su.nightexpress.nightcore.util.NumberUtil;
 import su.nightexpress.nightcore.util.Players;
+import su.nightexpress.nightcore.util.random.Rnd;
 
 import java.util.Collections;
 import java.util.List;
@@ -85,7 +87,7 @@ public class BaseCommands {
                 .withFlags(CommandFlags.SILENT, CommandFlags.SILENT_FEEDBACK)
                 .executes(this::giveKeyAll)
             )
-            .branch(Commands.literal("give", builder -> this.buildKeyManage(builder)
+            .branch(Commands.literal("give", builder -> this.buildKeyGive(builder)
                 .description(Lang.COMMAND_KEY_GIVE_DESC)
                 .permission(Perms.COMMAND_KEY_GIVE)
                 .executes(this::giveKey)
@@ -202,6 +204,18 @@ public class BaseCommands {
             .withFlags(CommandFlags.SILENT, CommandFlags.SILENT_FEEDBACK);
     }
 
+    @NotNull
+    private LiteralNodeBuilder buildKeyGive(@NotNull LiteralNodeBuilder builder) {
+        return builder
+            .withArguments(
+                Arguments.playerName(CommandArguments.PLAYER),
+                CommandArguments.forKey(plugin),
+                Arguments.integer(CommandArguments.AMOUNT, 1).localized(CoreLang.COMMAND_ARGUMENT_NAME_AMOUNT).suggestions((reader, context) -> Lists.newList("1", "5", "10")).optional(),
+                Arguments.integer(CommandArguments.MAX_AMOUNT, 1).localized(Lang.COMMAND_ARGUMENT_NAME_MAX_AMOUNT).suggestions((reader, context) -> Lists.newList("5", "10", "25")).optional()
+            )
+            .withFlags(CommandFlags.SILENT, CommandFlags.SILENT_FEEDBACK);
+    }
+
     private boolean dropCrate(@NotNull CommandContext context, @NotNull ParsedArguments arguments) {
         Crate crate = arguments.get(CommandArguments.CRATE, Crate.class);
 
@@ -281,15 +295,17 @@ public class BaseCommands {
         boolean mass = context.hasFlag(CommandFlags.MASS);
         CrateSource source = new CrateSource(crate);
 
-        Cost cost = force ? null : crate.getAnyCost(player).orElse(null);
-        OpenOptions options = force ? OpenOptions.ignoreRestrictions() : OpenOptions.empty();
+        new FoliaScheduler(plugin).runTask(player, () -> {
+            Cost cost = force ? null : crate.getAnyCost(player).orElse(null);
+            OpenOptions options = force ? OpenOptions.ignoreRestrictions() : OpenOptions.empty();
 
-        if (mass) {
-            plugin.getCrateManager().multiOpenCrate(player, source, options, cost, cost == null ? 1 : cost.countMaxOpenings(player));
-        }
-        else {
-            plugin.getCrateManager().openCrate(player, source, options, cost);
-        }
+            if (mass) {
+                plugin.getCrateManager().multiOpenCrate(player, source, options, cost, cost == null ? 1 : cost.countMaxOpenings(player));
+            }
+            else {
+                plugin.getCrateManager().openCrate(player, source, options, cost);
+            }
+        });
         return true;
     }
 
@@ -426,8 +442,14 @@ public class BaseCommands {
     private boolean giveKey(@NotNull CommandContext context, @NotNull ParsedArguments arguments) {
         CrateKey key = arguments.get(CommandArguments.KEY, CrateKey.class);
 
-        int amount = arguments.getInt(CommandArguments.AMOUNT, 1);
-        if (amount <= 0) return false;
+        int minAmount = arguments.getInt(CommandArguments.AMOUNT, 1);
+        int maxAmount = arguments.getInt(CommandArguments.MAX_AMOUNT, minAmount);
+        if (maxAmount < minAmount) {
+            Lang.ERROR_COMMAND_INVALID_AMOUNT_RANGE.message().send(context.getSender());
+            return false;
+        }
+
+        int amount = Rnd.get(minAmount, maxAmount);
 
         plugin.getUserManager().manageUser(arguments.getString(CommandArguments.PLAYER), user -> {
             if (user == null) {

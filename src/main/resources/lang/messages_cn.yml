@@ -28,7 +28,7 @@ Command:
     Desc: "管理玩家的钥匙"
     Usage: "[帮助]"
     Give:
-      Usage: "<玩家> <钥匙> <数量> [-s] [-nosave]"
+      Usage: "<玩家> <钥匙> <数量> [最大数量] [-s] [-nosave]"
       Desc: "给予玩家指定数量的钥匙"
       Done: "&7给予 &a%player_name% &e%amount% &7个 &b%key_name% &7钥匙"
       Notify: "&7你收到了 &e%amount% &7个 &b%key_name% &7钥匙"

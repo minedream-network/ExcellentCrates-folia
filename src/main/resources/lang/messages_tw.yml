@@ -18,7 +18,7 @@ Command:
     Error:
       Player: '&c無法處理離線/無效玩家 &e%player_name%&c 的操作!'
     Give:
-      Usage: <player | *> <keyId> <amount>
+      Usage: <player | *> <keyId> <amount> [max-amount]
       Desc: 給玩家箱子鑰匙。
       Done: '&f已給 &a%player_name% &f&a%amount% &f個 &a%key_name% 鑰匙。'
       Notify: '&f您已收到 &ax%amount% &f個 &a%key_name% 鑰匙!'

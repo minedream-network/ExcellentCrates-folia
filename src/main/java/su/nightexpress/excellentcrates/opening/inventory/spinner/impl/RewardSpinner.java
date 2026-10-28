@@ -51,7 +51,11 @@ public class RewardSpinner extends AbstractSpinner {
         Crate crate = this.opening.getCrate();
         Player player = this.opening.getPlayer();
 
-        if (!visual || Config.OPENINGS_GUI_SIMULATE_REAL_CHANCES.get()) {
+        if (!visual) {
+            return crate.rollRewardReserved(player, this.rarities);
+        }
+
+        if (Config.OPENINGS_GUI_SIMULATE_REAL_CHANCES.get()) {
             Map<Rarity, Double> rarityMap = new HashMap<>();
             this.rarities.forEach(rarity -> {
                 if (crate.hasRewards(player, rarity)) {

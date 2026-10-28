@@ -23,6 +23,10 @@ public final class RewardBroadcastFilterRegistry {
         this.filters.clear();
     }
 
+    public boolean hasFilters() {
+        return !this.filters.isEmpty();
+    }
+
     public boolean shouldReceive(@NotNull Player target, @NotNull Player opener, @NotNull Reward reward) {
         for (RewardBroadcastFilter filter : this.filters.values()) {
             if (!filter.shouldReceive(target, opener, reward)) {

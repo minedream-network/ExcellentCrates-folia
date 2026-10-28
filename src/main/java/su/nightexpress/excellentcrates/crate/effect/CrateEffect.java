@@ -39,18 +39,24 @@ public abstract class CrateEffect {
     }
 
     public void addTickCount() {
+        if (this.tickCount >= this.maxSteps && this.tickCount % this.tickInterval == 0) {
+            this.complete();
+        }
         this.tickCount++;
     }
 
+    public int getStep() {
+        return this.tickCount < 0 || this.tickCount % this.tickInterval != 0 ? -1 : (int) this.tickCount;
+    }
+
     public void playStep(@NotNull Location location, @NotNull UniParticle particle, @NotNull Player player) {
-        // Do not play an effect while paused.
-        if (this.tickCount < 0 || this.tickCount % this.tickInterval != 0) return;
+        this.playStep(location, particle, this.getStep(), player);
+    }
 
-        this.onStepPlay(LocationUtil.setCenter2D(location.clone()), particle, (int) this.tickCount, player);
+    public void playStep(@NotNull Location location, @NotNull UniParticle particle, int step, @NotNull Player player) {
+        if (step < 0) return;
 
-        if (this.tickCount >= this.maxSteps) {
-            this.complete();
-        }
+        this.onStepPlay(LocationUtil.setCenter2D(location.clone()), particle, step, player);
     }
 
     public abstract void onStepPlay(@NotNull Location origin, @NotNull UniParticle particle, int step, @NotNull Player player);

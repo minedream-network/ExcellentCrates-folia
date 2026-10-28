@@ -16,6 +16,7 @@ import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.util.BukkitThing;
 import su.nightexpress.nightcore.util.ItemUtil;
+import su.nightexpress.nightcore.util.bukkit.NightItem;
 import su.nightexpress.nightcore.util.text.NightMessage;
 
 import java.io.File;
@@ -151,7 +152,8 @@ public class RerollMenu {
             itemStack = new ItemStack(this.getDisplayItem(reward));
         }
         else {
-            itemStack = new ItemStack(settings.material());
+            NightItem fallback = NightItem.fromItemStack(settings.fallbackItem().clone());
+            itemStack = this.plugin.getUniItemsHook().applyMaterial(settings.materialName(), fallback).getItemStack().clone();
         }
 
         ItemMeta meta = itemStack.getItemMeta();
@@ -294,7 +296,8 @@ public class RerollMenu {
 
     private record MenuItemSettings(
         boolean enabled,
-        Material material,
+        String materialName,
+        ItemStack fallbackItem,
         String name,
         List<String> lore,
         int[] slots,
@@ -318,7 +321,8 @@ public class RerollMenu {
             boolean useRewardPreview = ConfigValue.create(path + ".Use_Reward_Preview", defaultUseRewardPreview).read(config);
 
             Material material = Material.matchMaterial(materialName);
-            return new MenuItemSettings(enabled, material == null ? defaultMaterial : material, name, lore, slots, useRewardPreview);
+            ItemStack fallbackItem = new ItemStack(material == null ? defaultMaterial : material);
+            return new MenuItemSettings(enabled, materialName, fallbackItem, name, lore, slots, useRewardPreview);
         }
 
         private void place(@NotNull Inventory inventory, @NotNull ItemStack itemStack) {

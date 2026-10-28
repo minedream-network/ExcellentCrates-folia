@@ -133,7 +133,6 @@ public class InventoryOpening extends AbstractOpening {
     @Override
     public void instaRoll() {
         this.closeTicks = 0L; // Do not schedule inventory closing.
-        this.setRefundable(false); // Do not return keys.
 
         if (!this.isLaunched()) {
             this.launch();
@@ -153,11 +152,10 @@ public class InventoryOpening extends AbstractOpening {
 
 
     public void runSpinner(@NotNull SpinnerHolder holder) {
+        Spinner spinner = holder.createSpinner(this.plugin, this);
         if (holder.getType() == SpinnerType.REWARD) {
             this.setRefundable(false);
         }
-
-        Spinner spinner = holder.createSpinner(this.plugin, this);
         this.addSpinner(spinner);
     }
 
@@ -206,7 +204,6 @@ public class InventoryOpening extends AbstractOpening {
         this.player.closeInventory();
         this.rerollMenuSwitching = false;
 
-        this.rewards.clear();
         this.spinners.forEach(Spinner::stop);
         this.spinners.clear();
 
@@ -215,7 +212,16 @@ public class InventoryOpening extends AbstractOpening {
         this.launchTicks = 0L;
         this.launched = false;
 
-        this.start();
+        try {
+            this.plugin.getDataManager().replaceReservedRewards(this.player, this.rewards, this::start);
+        }
+        catch (RuntimeException exception) {
+            this.running = false;
+            this.spinners.forEach(Spinner::stop);
+            this.spinners.clear();
+            this.launched = false;
+            throw exception;
+        }
         return true;
     }
 }

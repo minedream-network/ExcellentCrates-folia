@@ -9,7 +9,6 @@ import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.Rarity;
 import su.nightexpress.excellentcrates.crate.limit.CooldownMode;
 import su.nightexpress.excellentcrates.crate.limit.LimitValues;
-import su.nightexpress.excellentcrates.data.reward.RewardData;
 import su.nightexpress.excellentcrates.util.CrateUtils;
 import su.nightexpress.excellentcrates.util.ItemHelper;
 import su.nightexpress.nightcore.bridge.item.AdaptedItem;
@@ -125,43 +124,12 @@ public abstract class AbstractReward implements Reward {
 
     @Override
     public boolean isOnCooldown(@NotNull Player player) {
-        if (!this.limits.isEnabled()) return false;
-
-        if (this.limits.hasGlobalCooldown()) {
-            RewardData globalLimit = this.plugin.getDataManager().getRewardLimit(this, null);
-            if (globalLimit != null && globalLimit.isOnCooldown()) return true;
-        }
-
-        if (this.limits.hasPlayerCooldown()) {
-            RewardData playerLimit = this.plugin.getDataManager().getRewardLimit(this, player);
-            return playerLimit != null && playerLimit.isOnCooldown();
-        }
-
-        return false;
+        return this.plugin.getDataManager().isRewardOnCooldown(this, player);
     }
 
     @Override
     public int getAvailableRolls(@NotNull Player player) {
-        RewardData globalLimit = this.plugin.getDataManager().getRewardLimit(this, null);
-        RewardData playerLimit = this.plugin.getDataManager().getRewardLimit(this, player);
-
-        int globalLeft = -1;
-        int playerLeft = -1;
-
-        if (this.limits.isEnabled()) {
-            if (this.limits.isGlobalAmountLimited()) {
-                globalLeft = globalLimit == null ? this.limits.getGlobalAmount() : Math.max(0, this.limits.getGlobalAmount() - globalLimit.getRolls());
-            }
-            if (this.limits.isPlayerAmountLimited()) {
-                playerLeft = playerLimit == null ? this.limits.getPlayerAmount() : Math.max(0, this.limits.getPlayerAmount() - playerLimit.getRolls());
-            }
-        }
-
-        if (globalLeft < 0 || playerLeft < 0) {
-            return Math.max(playerLeft, globalLeft);
-        }
-
-        return Math.min(playerLeft, globalLeft);
+        return this.plugin.getDataManager().getRewardAvailableRolls(this, player);
     }
 
     @Override
@@ -226,6 +194,7 @@ public abstract class AbstractReward implements Reward {
     @Override
     public void setWeight(double weight) {
         this.weight = Math.max(0, weight);
+        this.crate.invalidateRewardWeightCache();
     }
 
     @NotNull
@@ -246,6 +215,7 @@ public abstract class AbstractReward implements Reward {
     @Override
     public void setRarity(@NotNull Rarity rarity) {
         this.rarity = rarity;
+        this.crate.invalidateRewardWeightCache();
     }
 
     @Override

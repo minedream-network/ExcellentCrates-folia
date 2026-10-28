@@ -76,6 +76,7 @@ public class SelectableOpening extends AbstractOpening {
 
     public boolean giveSelectedRewards() {
         if (!this.isAllRewardsSelected()) return false;
+        if (!this.plugin.getDataManager().reserveRewards(this.player, this.selectedRewards)) return false;
 
         this.setRefundable(false);
 

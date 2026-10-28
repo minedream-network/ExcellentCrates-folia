@@ -13,15 +13,16 @@ import java.util.Optional;
 
 public class CommandArguments {
 
-    public static final String PLAYER = "player";
-    public static final String CRATE  = "crate";
-    public static final String KEY    = "key";
-    public static final String AMOUNT = "amount";
-    public static final String X      = "x";
-    public static final String Y      = "y";
-    public static final String Z      = "z";
-    public static final String WORLD  = "world";
-    public static final String MODE   = "mode";
+    public static final String PLAYER     = "player";
+    public static final String CRATE      = "crate";
+    public static final String KEY        = "key";
+    public static final String AMOUNT     = "amount";
+    public static final String MAX_AMOUNT = "max_amount";
+    public static final String X          = "x";
+    public static final String Y          = "y";
+    public static final String Z          = "z";
+    public static final String WORLD      = "world";
+    public static final String MODE       = "mode";
 
     @NotNull
     public static ArgumentNodeBuilder<Crate> forCrate(@NotNull CratesPlugin plugin) {

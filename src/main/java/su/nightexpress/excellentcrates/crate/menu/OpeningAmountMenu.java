@@ -14,10 +14,10 @@ import su.nightexpress.excellentcrates.crate.CrateManager;
 import su.nightexpress.excellentcrates.crate.cost.Cost;
 import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.crate.impl.CrateSource;
+import su.nightexpress.excellentcrates.hooks.UniItemsMenu;
 import su.nightexpress.nightcore.config.ConfigValue;
 import su.nightexpress.nightcore.config.FileConfig;
 import su.nightexpress.nightcore.ui.menu.MenuViewer;
-import su.nightexpress.nightcore.ui.menu.data.ConfigBased;
 import su.nightexpress.nightcore.ui.menu.data.MenuLoader;
 import su.nightexpress.nightcore.ui.menu.type.LinkedMenu;
 import su.nightexpress.nightcore.util.bukkit.NightItem;
@@ -25,7 +25,7 @@ import su.nightexpress.nightcore.util.bukkit.NightItem;
 import static su.nightexpress.excellentcrates.Placeholders.*;
 import static su.nightexpress.nightcore.util.text.night.wrapper.TagWrappers.*;
 
-public class OpeningAmountMenu extends LinkedMenu<CratesPlugin, OpeningAmountMenu.Data> implements ConfigBased {
+public class OpeningAmountMenu extends LinkedMenu<CratesPlugin, OpeningAmountMenu.Data> implements UniItemsMenu {
 
     public record Data(@NotNull CrateSource source, @Nullable Cost cost) {}
 

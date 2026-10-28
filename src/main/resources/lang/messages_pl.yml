@@ -19,7 +19,7 @@ Command:
     Desc: Zarządzaj kluczami gracza.
     Usage: '[help]'
     Give:
-      Usage: <player> <key> <amount> [-s]
+      Usage: <player> <key> <amount> [max-amount] [-s]
       Desc: Przekaż klucz graczowi.
       Done: '#d4d9d8Przekazano #fdf35ex%amount%#d4d9d8 kluczy #fdf35e%key_name%#d4d9d8 dla #fdf35e%player_name%#d4d9d8.'
       Notify: '#d4d9d8Otrzymałeś #fdf35ex%amount%#d4d9d8 kluczy #fdf35e%key_name%#d4d9d8!'
